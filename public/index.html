@@ -5,13 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Администрация Спорткомплекса</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
 </head>
 <body>
     <nav class="main-nav">
         <div class="nav-container">
             <h1>Спорткомплекс</h1>
             <ul>
-                <li><a href="#" data-page="calendar">Бронирование</a></li>
+                <li><a href="#" data-page="calendar" class="active">Бронирование</a></li>
                 <li><a href="#" data-page="clients">Клиенты</a></li>
                 <li><a href="#" data-page="schedule">Расписание</a></li>
                 <li><a href="#" data-page="payments">Оплаты</a></li>
@@ -23,31 +26,157 @@
     <main class="content">
         <div id="calendar-page" class="page active">
             <h2>Бронирование</h2>
+            <div class="calendar-controls">
+                <input type="text" id="calendar-date" class="date-picker" placeholder="Выберите дату">
+                <select id="facility-select">
+                    <option value="">Выберите зал</option>
+                </select>
+            </div>
             <div class="calendar-container">
+                <div id="time-slots"></div>
+            </div>
+            <div id="booking-form" class="modal">
+                <div class="modal-content">
+                    <h3>Новое бронирование</h3>
+                    <form id="new-booking">
+                        <select name="client_id" required>
+                            <option value="">Выберите клиента</option>
+                        </select>
+                        <input type="datetime-local" name="start_time" required>
+                        <input type="datetime-local" name="end_time" required>
+                        <button type="submit">Забронировать</button>
+                        <button type="button" class="cancel">Отмена</button>
+                    </form>
+                </div>
             </div>
         </div>
 
         <div id="clients-page" class="page">
             <h2>Клиенты</h2>
+            <button id="add-client-btn" class="primary-btn">Добавить клиента</button>
             <div class="clients-container">
+                <table id="clients-table">
+                    <thead>
+                        <tr>
+                            <th>Имя</th>
+                            <th>Телефон</th>
+                            <th>Email</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="client-form" class="modal">
+                <div class="modal-content">
+                    <h3>Добавить клиента</h3>
+                    <form id="new-client">
+                        <input type="text" name="name" placeholder="Имя" required>
+                        <input type="tel" name="phone" placeholder="Телефон">
+                        <input type="email" name="email" placeholder="Email">
+                        <button type="submit">Сохранить</button>
+                        <button type="button" class="cancel">Отмена</button>
+                    </form>
+                </div>
             </div>
         </div>
 
         <div id="schedule-page" class="page">
             <h2>Расписание</h2>
+            <button id="add-schedule-btn" class="primary-btn">Добавить занятие</button>
             <div class="schedule-container">
+                <div class="schedule-filters">
+                    <input type="text" id="schedule-date" class="date-picker" placeholder="Выберите дату">
+                    <select id="schedule-facility">
+                        <option value="">Все залы</option>
+                    </select>
+                </div>
+                <table id="schedule-table">
+                    <thead>
+                        <tr>
+                            <th>Время</th>
+                            <th>Занятие</th>
+                            <th>Зал</th>
+                            <th>Тренер</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="schedule-form" class="modal">
+                <div class="modal-content">
+                    <h3>Добавить занятие</h3>
+                    <form id="new-schedule">
+                        <select name="facility_id" required>
+                            <option value="">Выберите зал</option>
+                        </select>
+                        <input type="date" name="date" required>
+                        <input type="time" name="start_time" required>
+                        <input type="time" name="end_time" required>
+                        <select name="activity_name" id="activity-select" required>
+                            <option value="">Выберите занятие</option>
+                        </select>
+                        <select name="trainer" id="trainer-select" required>
+                            <option value="">Выберите тренера</option>
+                        </select>
+                        <button type="submit">Сохранить</button>
+                        <button type="button" class="cancel">Отмена</button>
+                    </form>
+                </div>
             </div>
         </div>
 
         <div id="payments-page" class="page">
             <h2>Оплаты</h2>
+            <button id="add-payment-btn" class="primary-btn">Добавить оплату</button>
             <div class="payments-container">
+                <table id="payments-table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Клиент</th>
+                            <th>Абонемент</th>
+                            <th>Сумма</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="payment-form" class="modal">
+                <div class="modal-content">
+                    <h3>Новая оплата</h3>
+                    <form id="new-payment">
+                        <select name="client_id" required>
+                            <option value="">Выберите клиента</option>
+                        </select>
+                        <select name="membership_id" required>
+                            <option value="">Выберите абонемент</option>
+                        </select>
+                        <input type="number" name="amount" placeholder="Сумма" required>
+                        <button type="submit">Сохранить</button>
+                        <button type="button" class="cancel">Отмена</button>
+                    </form>
+                </div>
             </div>
         </div>
 
         <div id="statistics-page" class="page">
             <h2>Статистика</h2>
+            <div class="statistics-filters">
+                <input type="text" id="stats-start-date" class="date-picker" placeholder="Начало периода">
+                <input type="text" id="stats-end-date" class="date-picker" placeholder="Конец периода">
+                <button id="update-stats" class="primary-btn">Обновить</button>
+            </div>
             <div class="statistics-container">
+                <div class="stats-card">
+                    <h3>Посещаемость по залам</h3>
+                    <div id="facility-stats"></div>
+                </div>
+                <div class="stats-card">
+                    <h3>Активные клиенты</h3>
+                    <div id="active-clients"></div>
+                </div>
             </div>
         </div>
     </main>

@@ -84,3 +84,33 @@ sports-complex-admin/
 ## Лицензия
 
 MIT 
+
+async function populateBookingClients() {
+    const clientSelects = [
+        document.querySelector('#new-booking select[name="client_id"]'),
+        document.querySelector('#new-payment select[name="client_id"]')
+    ].filter(Boolean);
+
+    const clients = await fetchData('clients');
+    if (!clients) return;
+
+    clientSelects.forEach(select => {
+        select.innerHTML = '<option value="">Выберите клиента</option>';
+        clients.forEach(client => {
+            const option = document.createElement('option');
+            option.value = client.id;
+            option.textContent = client.name;
+            select.appendChild(option);
+        });
+    });
+}
+
+function initializePages() {
+    loadFacilities();
+    loadClients();
+    loadSchedule();
+    loadPayments();
+    loadStatistics();
+    populateScheduleFormDropdowns();
+    populateBookingClients();
+} 
