@@ -105,6 +105,49 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingForm.classList.add('active');
     }
 
+    async function deleteBooking(id) {
+        if (!confirm('Вы уверены, что хотите отменить это бронирование?')) return;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
+                await loadBookings(currentDate);
+            } else {
+                alert('Ошибка при отмене бронирования');
+            }
+        } catch (error) {
+            console.error('Error deleting booking:', error);
+            alert('Ошибка при отмене бронирования');
+        }
+    }
+
+    // Обновляем обработчик отправки формы бронирования
+    document.getElementById('new-booking').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        
+        try {
+            const response = await postData('bookings', data);
+            if (response) {
+                bookingForm.classList.remove('active');
+                const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
+                await loadBookings(currentDate);
+                e.target.reset();
+                if (bookingsModal.classList.contains('active')) {
+                    await loadAndShowBookingsModal();
+                }
+            }
+        } catch (error) {
+            console.error('Error creating booking:', error);
+            alert('Ошибка при создании бронирования');
+        }
+    });
+
     const clientsTable = document.getElementById('clients-table').querySelector('tbody');
     const clientForm = document.getElementById('client-form');
     const addClientBtn = document.getElementById('add-client-btn');
@@ -296,11 +339,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${item.facility_name}</td>
                 <td>${item.trainer || '-'}</td>
                 <td>
-                    <button onclick="editSchedule(${item.id})">Редактировать</button>
-                    <button onclick="deleteSchedule(${item.id})">Удалить</button>
+                    <button class="edit-schedule-btn" data-id="${item.id}">Редактировать</button>
+                    <button class="delete-schedule-btn" data-id="${item.id}">Удалить</button>
                 </td>
             `;
             scheduleTable.appendChild(row);
+        });
+        // Добавляем обработчики событий
+        document.querySelectorAll('.edit-schedule-btn').forEach(btn => {
+            btn.addEventListener('click', () => editSchedule(btn.dataset.id));
+        });
+        document.querySelectorAll('.delete-schedule-btn').forEach(btn => {
+            btn.addEventListener('click', () => deleteSchedule(btn.dataset.id));
         });
     }
 
@@ -484,6 +534,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    async function populateBookingClients() {
+        const clientSelects = [
+            document.querySelector('#new-booking select[name="client_id"]'),
+            document.querySelector('#new-payment select[name="client_id"]')
+        ].filter(Boolean);
+
+        const clients = await fetchData('clients');
+        if (!clients) return;
+
+        clientSelects.forEach(select => {
+            select.innerHTML = '<option value="">Выберите клиента</option>';
+            clients.forEach(client => {
+                const option = document.createElement('option');
+                option.value = client.id;
+                option.textContent = client.name;
+                select.appendChild(option);
+            });
+        });
+    }
+
+    async function populateBookingFacilities() {
+        const facilitySelect = document.querySelector('#new-booking select[name="facility_id"]');
+        if (!facilitySelect) return;
+        const facilities = await fetchData('facilities');
+        facilitySelect.innerHTML = '<option value="">Выберите зал</option>';
+        facilities.forEach(facility => {
+            const option = document.createElement('option');
+            option.value = facility.id;
+            option.textContent = facility.name;
+            facilitySelect.appendChild(option);
+        });
+    }
+
     function initializePages() {
         loadFacilities();
         loadClients();
@@ -493,6 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
         populateScheduleFormDropdowns();
         populateBookingClients();
         populateMemberships();
+        populateBookingFacilities();
     }
 
     document.querySelectorAll('.cancel').forEach(button => {
@@ -500,6 +584,74 @@ document.addEventListener('DOMContentLoaded', () => {
             button.closest('.modal').classList.remove('active');
         });
     });
+
+    // Добавить обработчик смены зала для подгрузки бронирований
+    facilitySelect.addEventListener('change', () => {
+        if (calendarDate.value) {
+            loadBookings(new Date(calendarDate.value));
+        }
+    });
+
+    // При инициализации, если дата выбрана, сразу загрузить бронирования
+    if (calendarDate.value) {
+        loadBookings(new Date(calendarDate.value));
+    }
+
+    // --- Модальное окно просмотра бронированных клиентов ---
+    const viewBookingsBtn = document.getElementById('view-bookings-btn');
+    const bookingsModal = document.getElementById('bookings-modal');
+    const closeBookingsModal = document.getElementById('close-bookings-modal');
+    const bookingsTableModal = document.querySelector('#bookings-table-modal tbody');
+
+    viewBookingsBtn.addEventListener('click', async () => {
+        await loadAndShowBookingsModal();
+        bookingsModal.classList.add('active');
+    });
+
+    closeBookingsModal.addEventListener('click', () => {
+        bookingsModal.classList.remove('active');
+    });
+
+    async function loadAndShowBookingsModal() {
+        const bookings = await fetchData('bookings?start_date=1970-01-01&end_date=2100-12-31');
+        const facilities = await fetchData('facilities');
+        bookingsTableModal.innerHTML = '';
+        if (!bookings || bookings.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="5" style="text-align:center; color:#888;">Нет бронирований</td>';
+            bookingsTableModal.appendChild(row);
+            return;
+        }
+        bookings.forEach(booking => {
+            const row = document.createElement('tr');
+            const startDate = new Date(booking.start_time);
+            const endDate = new Date(booking.end_time);
+            let facilityName = booking.facility_name || booking.facility || '-';
+            if ((!facilityName || facilityName === '-') && facilities && booking.facility_id) {
+                const found = facilities.find(f => f.id == booking.facility_id);
+                if (found) facilityName = found.name;
+            }
+            row.innerHTML = `
+                <td>${startDate.toLocaleDateString()}</td>
+                <td>${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${endDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                <td>${booking.client_name || booking.client || '-'}</td>
+                <td>${facilityName}</td>
+                <td>
+                    <button class="delete-booking-btn" data-id="${booking.id}">Удалить</button>
+                </td>
+            `;
+            bookingsTableModal.appendChild(row);
+        });
+        // Обработчики кнопок удаления
+        document.querySelectorAll('.delete-booking-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (confirm('Удалить это бронирование?')) {
+                    await fetch(`${API_BASE_URL}/bookings/${btn.dataset.id}`, { method: 'DELETE' });
+                    await loadAndShowBookingsModal();
+                }
+            });
+        });
+    }
 
     initializePages();
 }); 

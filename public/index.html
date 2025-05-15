@@ -31,6 +31,7 @@
                 <select id="facility-select">
                     <option value="">Выберите зал</option>
                 </select>
+                <button id="view-bookings-btn" type="button">Посмотреть бронирования</button>
             </div>
             <div class="calendar-container">
                 <div id="time-slots"></div>
@@ -41,6 +42,9 @@
                     <form id="new-booking">
                         <select name="client_id" required>
                             <option value="">Выберите клиента</option>
+                        </select>
+                        <select name="facility_id" required>
+                            <option value="">Выберите зал</option>
                         </select>
                         <input type="datetime-local" name="start_time" required>
                         <input type="datetime-local" name="end_time" required>
@@ -180,6 +184,26 @@
             </div>
         </div>
     </main>
+
+    <!-- Модальное окно для просмотра забронированных клиентов -->
+    <div id="bookings-modal" class="modal">
+        <div class="modal-content" style="max-width:900px;">
+            <h3>Забронированные клиенты</h3>
+            <table id="bookings-table-modal">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Время</th>
+                        <th>Клиент</th>
+                        <th>Зал</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <button type="button" class="cancel" id="close-bookings-modal">Закрыть</button>
+        </div>
+    </div>
 
     <script src="js/main.js"></script>
 </body>

@@ -67,7 +67,6 @@ function initializeDatabase() {
             FOREIGN KEY (membership_id) REFERENCES memberships (id)
         )`);
 
-        // Schedule table
         db.run(`CREATE TABLE IF NOT EXISTS schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             facility_id INTEGER,
@@ -195,6 +194,21 @@ app.delete('/api/bookings/:id', (req, res) => {
         }
         res.json({ success: true });
     });
+});
+
+app.put('/api/bookings/:id', (req, res) => {
+    const { client_id, facility_id, start_time, end_time } = req.body;
+    db.run(
+        'UPDATE bookings SET client_id = ?, facility_id = ?, start_time = ?, end_time = ? WHERE id = ?',
+        [client_id, facility_id, start_time, end_time, req.params.id],
+        function (err) {
+            if (err) {
+                res.status(500).json({ error: err.message });
+                return;
+            }
+            res.json({ success: true });
+        }
+    );
 });
 
 app.get('/api/schedule', (req, res) => {
