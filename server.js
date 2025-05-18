@@ -352,21 +352,30 @@ app.post('/api/memberships', (req, res) => {
 
 app.get('/api/statistics', (req, res) => {
     const { start_date, end_date } = req.query;
+    const facility_id = req.query.facility_id;
     const query = `
         SELECT 
             f.name as facility_name,
+            f.id as facility_id,
             COUNT(*) as total_bookings,
             COUNT(DISTINCT b.client_id) as unique_clients
         FROM bookings b
         LEFT JOIN facilities f ON b.facility_id = f.id
         WHERE b.start_time BETWEEN ? AND ?
-        GROUP BY f.id
+        ${facility_id ? 'AND b.facility_id = ?' : ''}
+        GROUP BY f.id, f.name
+        ORDER BY f.name
     `;
-    db.all(query, [start_date, end_date], (err, rows) => {
+    const params = [start_date, end_date];
+    if (facility_id) {
+        params.push(facility_id);
+    }
+    db.all(query, params, (err, rows) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
         }
+        console.log('Statistics query result:', rows);
         res.json(rows);
     });
 });

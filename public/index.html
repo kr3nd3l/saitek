@@ -170,6 +170,9 @@
             <div class="statistics-filters">
                 <input type="text" id="stats-start-date" class="date-picker" placeholder="Начало периода">
                 <input type="text" id="stats-end-date" class="date-picker" placeholder="Конец периода">
+                <select id="stats-facility-select">
+                    <option value="">Все залы</option>
+                </select>
                 <button id="update-stats" class="primary-btn">Обновить</button>
             </div>
             <div class="statistics-container">
@@ -177,15 +180,10 @@
                     <h3>Посещаемость по залам</h3>
                     <div id="facility-stats"></div>
                 </div>
-                <div class="stats-card">
-                    <h3>Активные клиенты</h3>
-                    <div id="active-clients"></div>
-                </div>
             </div>
         </div>
     </main>
 
-    <!-- Модальное окно для просмотра забронированных клиентов -->
     <div id="bookings-modal" class="modal">
         <div class="modal-content" style="max-width:900px;">
             <h3>Забронированные клиенты</h3>

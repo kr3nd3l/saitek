@@ -125,7 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Обновляем обработчик отправки формы бронирования
     document.getElementById('new-booking').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
@@ -244,6 +243,44 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         
+        const name = data.name.trim();
+        const phone = data.phone.trim();
+        const email = data.email.trim();
+        
+
+        document.querySelectorAll('.error-message').forEach(el => el.remove());
+        document.querySelectorAll('.error-input').forEach(el => el.classList.remove('error-input'));
+        
+        let hasErrors = false;
+        
+        if (!name) {
+            showError('name', 'Имя обязательно для заполнения');
+            hasErrors = true;
+        } else if (name.length < 2) {
+            showError('name', 'Имя должно содержать минимум 2 символа');
+            hasErrors = true;
+        }
+        
+        if (phone) {
+            const phoneRegex = /^\+?[0-9]{10,15}$/;
+            if (!phoneRegex.test(phone)) {
+                showError('phone', 'Введите корректный номер телефона');
+                hasErrors = true;
+            }
+        }
+        
+        if (email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                showError('email', 'Введите корректный email адрес');
+                hasErrors = true;
+            }
+        }
+        
+        if (hasErrors) {
+            return;
+        }
+        
         try {
             let response;
             if (editingClientId) {
@@ -275,13 +312,22 @@ document.addEventListener('DOMContentLoaded', () => {
             
             alert(editingClientId ? 'Клиент успешно обновлен' : 'Клиент успешно добавлен');
             
-
             editingClientId = null;
         } catch (error) {
             console.error('Error saving client:', error);
             alert('Ошибка при сохранении клиента');
         }
     });
+
+    function showError(fieldName, message) {
+        const input = document.querySelector(`[name="${fieldName}"]`);
+        input.classList.add('error-input');
+        
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        input.parentNode.insertBefore(errorDiv, input.nextSibling);
+    }
 
     const scheduleTable = document.getElementById('schedule-table').querySelector('tbody');
     const scheduleForm = document.getElementById('schedule-form');
@@ -345,7 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             scheduleTable.appendChild(row);
         });
-        // Добавляем обработчики событий
         document.querySelectorAll('.edit-schedule-btn').forEach(btn => {
             btn.addEventListener('click', () => editSchedule(btn.dataset.id));
         });
@@ -470,15 +515,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateStatsBtn = document.getElementById('update-stats');
     const facilityStats = document.getElementById('facility-stats');
     const activeClients = document.getElementById('active-clients');
+    const statsFacilitySelect = document.getElementById('stats-facility-select');
 
     async function loadStatistics() {
         const startDate = statsStartDate.value;
         const endDate = statsEndDate.value;
+        const facilityId = statsFacilitySelect.value;
         
-        const stats = await fetchData(`statistics?start_date=${startDate}&end_date=${endDate}`);
+        let statsUrl = `statistics?start_date=${startDate}&end_date=${endDate}`;
+        if (facilityId) {
+            statsUrl += `&facility_id=${facilityId}`;
+        }
+        const stats = await fetchData(statsUrl);
         if (!stats) return;
 
         facilityStats.innerHTML = '';
+        
+        if (stats.length === 0) {
+            facilityStats.innerHTML = '<p>Нет данных за указанный период.</p>';
+            return;
+        }
+
         stats.forEach(stat => {
             const card = document.createElement('div');
             card.className = 'stats-card';
@@ -501,7 +558,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('facility-select'),
             document.querySelector('#new-booking select[name="facility_id"]'),
             document.getElementById('schedule-facility'),
-            document.querySelector('#new-schedule select[name="facility_id"]')
+            document.querySelector('#new-schedule select[name="facility_id"]'),
+            statsFacilitySelect
         ].filter(Boolean);
 
         facilitySelects.forEach(select => {
@@ -520,10 +578,15 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelector('#new-payment select[name="membership_id"]')
         ].filter(Boolean);
 
+        console.log('populateMemberships called');
+        console.log('Target membership selects:', membershipSelects);
+
         const memberships = await fetchData('memberships');
+        console.log('Fetched memberships:', memberships);
         if (!memberships) return;
 
         membershipSelects.forEach(select => {
+            console.log('Populating membership select:', select);
             select.innerHTML = '<option value="">Выберите абонемент</option>';
             memberships.forEach(membership => {
                 const option = document.createElement('option');
@@ -540,10 +603,15 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelector('#new-payment select[name="client_id"]')
         ].filter(Boolean);
 
+        console.log('populateBookingClients called');
+        console.log('Target client selects:', clientSelects);
+
         const clients = await fetchData('clients');
+        console.log('Fetched clients:', clients);
         if (!clients) return;
 
         clientSelects.forEach(select => {
+            console.log('Populating client select:', select);
             select.innerHTML = '<option value="">Выберите клиента</option>';
             clients.forEach(client => {
                 const option = document.createElement('option');
@@ -585,19 +653,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Добавить обработчик смены зала для подгрузки бронирований
     facilitySelect.addEventListener('change', () => {
         if (calendarDate.value) {
             loadBookings(new Date(calendarDate.value));
         }
     });
 
-    // При инициализации, если дата выбрана, сразу загрузить бронирования
     if (calendarDate.value) {
         loadBookings(new Date(calendarDate.value));
     }
 
-    // --- Модальное окно просмотра бронированных клиентов ---
     const viewBookingsBtn = document.getElementById('view-bookings-btn');
     const bookingsModal = document.getElementById('bookings-modal');
     const closeBookingsModal = document.getElementById('close-bookings-modal');
@@ -642,7 +707,6 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             bookingsTableModal.appendChild(row);
         });
-        // Обработчики кнопок удаления
         document.querySelectorAll('.delete-booking-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 if (confirm('Удалить это бронирование?')) {
