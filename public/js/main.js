@@ -486,18 +486,34 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentsTable.innerHTML = '';
         payments.forEach(payment => {
             const row = document.createElement('tr');
+            let durationText = '-';
+            const duration = Number(payment.membership_duration);
+            if (duration) {
+                if (duration % 12 === 0) {
+                    const years = duration / 12;
+                    durationText = years + ' ' + (years === 1 ? 'год' : (years < 5 ? 'года' : 'лет'));
+                } else {
+                    durationText = duration + ' месяцев';
+                }
+            }
             row.innerHTML = `
                 <td>${new Date(payment.payment_date).toLocaleDateString()}</td>
                 <td>${payment.client_name}</td>
                 <td>${payment.membership_name}</td>
                 <td>${payment.amount}</td>
+                <td>${durationText}</td>
+                <td><button class="delete-payment-btn" data-id="${payment.id}">Удалить</button></td>
             `;
             paymentsTable.appendChild(row);
+        });
+        document.querySelectorAll('.delete-payment-btn').forEach(btn => {
+            btn.addEventListener('click', () => deletePayment(btn.dataset.id));
         });
     }
 
     addPaymentBtn.addEventListener('click', () => {
         paymentForm.classList.add('active');
+        populateMemberships();
     });
 
     document.getElementById('new-payment').addEventListener('submit', async (e) => {
@@ -529,20 +545,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const stats = await fetchData(statsUrl);
         if (!stats) return;
 
+        let statsArr = Array.isArray(stats) ? stats : (stats ? [stats] : []);
         facilityStats.innerHTML = '';
-        
-        if (stats.length === 0) {
+        if (statsArr.length === 0) {
             facilityStats.innerHTML = '<p>Нет данных за указанный период.</p>';
             return;
         }
-
-        stats.forEach(stat => {
+        statsArr.forEach(stat => {
             const card = document.createElement('div');
             card.className = 'stats-card';
             card.innerHTML = `
-                <h4>${stat.facility_name}</h4>
-                <p>Всего бронирований: ${stat.total_bookings}</p>
-                <p>Уникальных клиентов: ${stat.unique_clients}</p>
+                <h4>${stat.facility_name || '-'}</h4>
+                <p>Всего бронирований: ${stat.total_bookings != null ? stat.total_bookings : 0}</p>
+                <p>Уникальных клиентов: ${stat.unique_clients != null ? stat.unique_clients : 0}</p>
+                <p>Куплено абонементов: ${stat.memberships_sold != null ? stat.memberships_sold : 0}</p>
+                <p>Сумма за абонементы: ${stat.memberships_total != null ? stat.memberships_total : 0}₽</p>
             `;
             facilityStats.appendChild(card);
         });
@@ -574,24 +591,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function populateMemberships() {
-        const membershipSelects = [
-            document.querySelector('#new-payment select[name="membership_id"]')
-        ].filter(Boolean);
-
-        console.log('populateMemberships called');
-        console.log('Target membership selects:', membershipSelects);
-
+        const membershipSelects = Array.from(document.querySelectorAll('select[name="membership_id"]'));
         const memberships = await fetchData('memberships');
-        console.log('Fetched memberships:', memberships);
         if (!memberships) return;
-
         membershipSelects.forEach(select => {
-            console.log('Populating membership select:', select);
             select.innerHTML = '<option value="">Выберите абонемент</option>';
             memberships.forEach(membership => {
                 const option = document.createElement('option');
                 option.value = membership.id;
-                option.textContent = `${membership.name} (${membership.price}₽)`;
+                option.textContent = `${membership.name} (${membership.duration}, ${membership.price}₽)`;
                 select.appendChild(option);
             });
         });
@@ -717,5 +725,105 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+
+    const membershipsTable = document.getElementById('memberships-table')?.querySelector('tbody');
+    const membershipForm = document.getElementById('membership-form');
+    const addMembershipBtn = document.getElementById('add-membership-btn');
+    let editingMembershipId = null;
+
+    async function loadMemberships() {
+        if (!membershipsTable) return;
+        const memberships = await fetchData('memberships');
+        membershipsTable.innerHTML = '';
+        if (!memberships || memberships.length === 0) {
+            membershipsTable.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">Нет абонементов</td></tr>';
+            return;
+        }
+        memberships.forEach(m => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${m.name}</td>
+                <td>${m.duration || '-'}</td>
+                <td>${m.price}₽</td>
+                <td><button class="delete-membership-btn" data-id="${m.id}">Удалить</button></td>
+            `;
+            membershipsTable.appendChild(row);
+        });
+        document.querySelectorAll('.delete-membership-btn').forEach(btn => {
+            btn.addEventListener('click', () => deleteMembership(btn.dataset.id));
+        });
+    }
+
+    async function deleteMembership(id) {
+        if (!confirm('Вы уверены, что хотите удалить этот абонемент?')) return;
+        console.log('Удаление абонемента с id:', id);
+        try {
+            const response = await fetch(`${API_BASE_URL}/memberships/${id}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                loadMemberships();
+            } else {
+                const data = await response.json().catch(() => ({}));
+                alert(data.error || 'Ошибка при удалении абонемента');
+            }
+        } catch (error) {
+            console.error('Error deleting membership:', error);
+            alert('Ошибка при удалении абонемента');
+        }
+    }
+
+    addMembershipBtn?.addEventListener('click', async () => {
+        editingMembershipId = null;
+        const form = document.getElementById('new-membership');
+        form.reset();
+
+        const facilitySelect = form.querySelector('select[name="facility_id"]');
+        if (facilitySelect) {
+            facilitySelect.innerHTML = '<option value="">Выберите зал</option>';
+            const facilities = await fetchData('facilities');
+            if (facilities) {
+                facilities.forEach(facility => {
+                    const option = document.createElement('option');
+                    option.value = facility.id;
+                    option.textContent = facility.name;
+                    facilitySelect.appendChild(option);
+                });
+            }
+        }
+        membershipForm.classList.add('active');
+    });
+
+    document.getElementById('new-membership')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+        const response = await postData('memberships', data);
+        if (response && response.id) {
+            membershipForm.classList.remove('active');
+            loadMemberships();
+            e.target.reset();
+        } else {
+            alert('Ошибка при добавлении абонемента');
+        }
+    });
+
+
+    loadMemberships();
+
     initializePages();
+
+    async function deletePayment(id) {
+        if (!confirm('Вы уверены, что хотите удалить эту оплату?')) return;
+        try {
+            const response = await fetch(`${API_BASE_URL}/payments/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                loadPayments();
+            } else {
+                alert('Ошибка при удалении оплаты');
+            }
+        } catch (error) {
+            alert('Ошибка при удалении оплаты');
+        }
+    }
 }); 

@@ -270,7 +270,7 @@ th {
     }
 }
 
-/* Стили для ошибок валидации */
+
 .error-input {
     border-color: #ff4444 !important;
     background-color: #fff8f8 !important;
@@ -283,7 +283,7 @@ th {
     margin-bottom: 8px;
 }
 
-/* Стили для формы регистрации */
+
 .client-form {
     max-width: 500px;
     margin: 0 auto;

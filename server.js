@@ -299,7 +299,7 @@ app.put('/api/schedule/:id', (req, res) => {
 
 app.get('/api/payments', (req, res) => {
     const query = `
-        SELECT p.*, c.name as client_name, m.name as membership_name 
+        SELECT p.*, c.name as client_name, m.name as membership_name, m.duration as membership_duration 
         FROM payments p
         LEFT JOIN clients c ON p.client_id = c.id
         LEFT JOIN memberships m ON p.membership_id = m.id
@@ -327,6 +327,16 @@ app.post('/api/payments', (req, res) => {
         });
 });
 
+app.delete('/api/payments/:id', (req, res) => {
+    db.run('DELETE FROM payments WHERE id = ?', [req.params.id], (err) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        res.json({ success: true });
+    });
+});
+
 app.get('/api/memberships', (req, res) => {
     db.all('SELECT * FROM memberships ORDER BY name', [], (err, rows) => {
         if (err) {
@@ -350,9 +360,74 @@ app.post('/api/memberships', (req, res) => {
         });
 });
 
+app.delete('/api/memberships/:id', (req, res) => {
+    const membershipId = req.params.id;
+    db.get('SELECT COUNT(*) as count FROM payments WHERE membership_id = ?', [membershipId], (err, row) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        if (row.count > 0) {
+            res.status(400).json({ error: 'Нельзя удалить абонемент, пока есть связанные оплаты.' });
+            return;
+        }
+        db.run('DELETE FROM memberships WHERE id = ?', [membershipId], (err) => {
+            if (err) {
+                res.status(500).json({ error: err.message });
+                return;
+            }
+            res.json({ success: true });
+        });
+    });
+});
+
 app.get('/api/statistics', (req, res) => {
     const { start_date, end_date } = req.query;
     const facility_id = req.query.facility_id;
+    if (facility_id) {
+
+        db.get('SELECT * FROM facilities WHERE id = ?', [facility_id], (err, facility) => {
+            if (err || !facility) {
+                res.status(500).json({ error: 'Зал не найден' });
+                return;
+            }
+
+            db.get(`
+                SELECT COUNT(*) as total_bookings, COUNT(DISTINCT client_id) as unique_clients
+                FROM bookings
+                WHERE facility_id = ? AND start_time BETWEEN ? AND ?
+            `, [facility_id, start_date, end_date], (err2, bookingStats) => {
+                if (err2) {
+                    res.status(500).json({ error: err2.message });
+                    return;
+                }
+
+                db.get(`
+                    SELECT COUNT(p.id) as memberships_sold, COALESCE(SUM(p.amount),0) as memberships_total
+                    FROM payments p
+                    LEFT JOIN memberships m ON p.membership_id = m.id
+                    WHERE m.facility_id = ? AND p.payment_date BETWEEN ? AND ?
+                `, [facility_id, start_date, end_date], (err3, membershipStats) => {
+                    if (err3) {
+                        res.status(500).json({ error: err3.message });
+                        return;
+                    }
+                    res.json([
+                        {
+                            facility_name: facility.name,
+                            facility_id: facility.id,
+                            total_bookings: bookingStats.total_bookings,
+                            unique_clients: bookingStats.unique_clients,
+                            memberships_sold: membershipStats.memberships_sold,
+                            memberships_total: membershipStats.memberships_total
+                        }
+                    ]);
+                });
+            });
+        });
+        return;
+    }
+
     const query = `
         SELECT 
             f.name as facility_name,
@@ -362,21 +437,39 @@ app.get('/api/statistics', (req, res) => {
         FROM bookings b
         LEFT JOIN facilities f ON b.facility_id = f.id
         WHERE b.start_time BETWEEN ? AND ?
-        ${facility_id ? 'AND b.facility_id = ?' : ''}
         GROUP BY f.id, f.name
         ORDER BY f.name
     `;
     const params = [start_date, end_date];
-    if (facility_id) {
-        params.push(facility_id);
-    }
     db.all(query, params, (err, rows) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
         }
-        console.log('Statistics query result:', rows);
-        res.json(rows);
+
+        const statsWithMemberships = [];
+        let pending = rows.length;
+        if (pending === 0) return res.json([]);
+        rows.forEach(row => {
+            let membershipQuery = `
+                SELECT COUNT(p.id) as memberships_sold, COALESCE(SUM(p.amount),0) as memberships_total
+                FROM payments p
+                LEFT JOIN memberships m ON p.membership_id = m.id
+                WHERE m.id IS NOT NULL AND m.name IS NOT NULL
+                AND p.payment_date BETWEEN ? AND ?
+                AND m.facility_id = ?
+            `;
+            const membershipParams = [start_date, end_date, row.facility_id];
+            db.get(membershipQuery, membershipParams, (err2, membershipStats) => {
+                row.memberships_sold = membershipStats ? membershipStats.memberships_sold : 0;
+                row.memberships_total = membershipStats ? membershipStats.memberships_total : 0;
+                statsWithMemberships.push(row);
+                pending--;
+                if (pending === 0) {
+                    res.json(statsWithMemberships);
+                }
+            });
+        });
     });
 });
 
