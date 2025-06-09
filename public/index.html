@@ -99,7 +99,8 @@
                 <table id="schedule-table">
                     <thead>
                         <tr>
-                            <th>Время</th>
+                            <th>Дата и Время</th>
+                            <th>Клиент</th>
                             <th>Занятие</th>
                             <th>Зал</th>
                             <th>Тренер</th>
@@ -113,7 +114,10 @@
                 <div class="modal-content">
                     <h3>Добавить занятие</h3>
                     <form id="new-schedule">
-                        <select name="facility_id" required>
+                        <select name="client_id" id="schedule-client-select" required>
+                            <option value="">Выберите клиента</option>
+                        </select>
+                        <select name="facility_id" id="schedule-facility-form-select" required class="disabled-look">
                             <option value="">Выберите зал</option>
                         </select>
                         <input type="date" name="date" required>
@@ -135,6 +139,7 @@
         <div id="payments-page" class="page">
             <h2>Оплаты</h2>
             <button id="add-payment-btn" class="primary-btn">Добавить оплату</button>
+            <button id="download-payments-csv-btn" class="primary-btn">Скачать CSV</button>
             <div class="payments-container">
                 <table id="payments-table">
                     <thead>
@@ -196,6 +201,7 @@
                             <th>Название</th>
                             <th>Длительность</th>
                             <th>Цена</th>
+                            <th>Зал</th>
                             <th>Действия</th>
                         </tr>
                     </thead>

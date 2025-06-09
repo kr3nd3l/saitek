@@ -54,7 +54,9 @@ function initializeDatabase() {
             name TEXT NOT NULL,
             duration INTEGER NOT NULL,
             price REAL NOT NULL,
-            description TEXT
+            description TEXT,
+            facility_id INTEGER,
+            FOREIGN KEY (facility_id) REFERENCES facilities (id)
         )`);
 
         db.run(`CREATE TABLE IF NOT EXISTS payments (
@@ -85,6 +87,43 @@ function initializeDatabase() {
                 stmt.run('Бассейн', 'pool', 20);
                 stmt.run('Зал для йоги', 'yoga', 15);
                 stmt.finalize();
+            }
+        });
+
+
+        db.all("PRAGMA table_info(memberships);", (err, rows) => {
+            if (err) {
+                console.error("Error checking memberships table info:", err);
+                return;
+            }
+            const hasFacilityId = rows.some(row => row.name === 'facility_id');
+            if (!hasFacilityId) {
+                db.run(`ALTER TABLE memberships ADD COLUMN facility_id INTEGER;`, (alterErr) => {
+                    if (alterErr) {
+                        console.error("Error adding facility_id to memberships table:", alterErr);
+                    } else {
+                        console.log("Added facility_id column to memberships table.");
+                    }
+                });
+            }
+        });
+
+
+        db.all("PRAGMA table_info(schedule);", (err, rows) => {
+            if (err) {
+                console.error("Error checking schedule table info:", err);
+                return;
+            }
+            const hasClientId = rows.some(row => row.name === 'client_id');
+            if (!hasClientId) {
+                db.run(`ALTER TABLE schedule ADD COLUMN client_id INTEGER;`, (alterErr) => {
+                    if (alterErr) {
+                        console.error("Error adding client_id to schedule table:", alterErr);
+                    } else {
+                        console.log("Added client_id column to schedule table.");
+
+                    }
+                });
             }
         });
     });
@@ -175,15 +214,67 @@ app.get('/api/bookings', (req, res) => {
 
 app.post('/api/bookings', (req, res) => {
     const { client_id, facility_id, start_time, end_time } = req.body;
-    db.run('INSERT INTO bookings (client_id, facility_id, start_time, end_time) VALUES (?, ?, ?, ?)',
-        [client_id, facility_id, start_time, end_time],
-        function(err) {
-            if (err) {
-                res.status(500).json({ error: err.message });
-                return;
-            }
-            res.json({ id: this.lastID });
-        });
+
+    if (!client_id || !facility_id || !start_time || !end_time) {
+        return res.status(400).json({ error: 'Все поля обязательны для заполнения.' });
+    }
+
+    const bookingStartTime = moment(start_time);
+
+
+    db.get(`
+        SELECT m.facility_id, p.payment_date, m.duration
+        FROM payments p
+        JOIN memberships m ON p.membership_id = m.id
+        WHERE p.client_id = ?
+        ORDER BY p.payment_date DESC
+        LIMIT 1
+    `, [client_id], (err, row) => {
+        if (err) {
+            console.error('Error checking client membership:', err);
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!row) {
+            return res.status(400).json({ error: 'Клиент не имеет активного абонемента.' });
+        }
+
+        const paymentDate = moment(row.payment_date);
+        const membershipEndDate = paymentDate.add(row.duration, 'months');
+
+        if (bookingStartTime.isAfter(membershipEndDate)) {
+            return res.status(400).json({ error: 'Срок действия абонемента истёк.' });
+        }
+
+        if (row.facility_id && row.facility_id !== parseInt(facility_id)) {
+            return res.status(400).json({ error: 'Зал не соответствует залу в абонементе клиента.' });
+        }
+
+
+        db.get(
+            'SELECT COUNT(*) as count FROM bookings WHERE facility_id = ? AND ((start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?)) ',
+            [facility_id, end_time, start_time, end_time, start_time],
+            (err, existingBooking) => {
+                if (err) {
+                    res.status(500).json({ error: err.message });
+                    return;
+                }
+                if (existingBooking.count > 0) {
+                    res.status(400).json({ error: 'Выбранное время уже занято.' });
+                    return;
+                }
+
+                db.run('INSERT INTO bookings (client_id, facility_id, start_time, end_time) VALUES (?, ?, ?, ?)',
+                    [client_id, facility_id, start_time, end_time],
+                    function(err) {
+                        if (err) {
+                            res.status(500).json({ error: err.message });
+                            return;
+                        }
+                        res.json({ id: this.lastID });
+                    });
+            });
+    });
 });
 
 app.delete('/api/bookings/:id', (req, res) => {
@@ -214,9 +305,10 @@ app.put('/api/bookings/:id', (req, res) => {
 app.get('/api/schedule', (req, res) => {
     const { date, facility_id } = req.query;
     let query = `
-        SELECT s.*, f.name as facility_name 
+        SELECT s.*, f.name as facility_name, c.name as client_name 
         FROM schedule s
         LEFT JOIN facilities f ON s.facility_id = f.id
+        LEFT JOIN clients c ON s.client_id = c.id
         WHERE 1=1
     `;
     const params = [];
@@ -239,16 +331,71 @@ app.get('/api/schedule', (req, res) => {
 });
 
 app.post('/api/schedule', (req, res) => {
-    const { facility_id, date, start_time, end_time, activity_name, trainer } = req.body;
-    db.run('INSERT INTO schedule (facility_id, date, start_time, end_time, activity_name, trainer) VALUES (?, ?, ?, ?, ?, ?)',
-        [facility_id, date, start_time, end_time, activity_name, trainer],
-        function(err) {
-            if (err) {
-                res.status(500).json({ error: err.message });
-                return;
+    const { client_id, facility_id, date, start_time, end_time, activity_name, trainer } = req.body;
+
+    if (!client_id || !facility_id || !date || !start_time || !end_time || !activity_name || !trainer) {
+        return res.status(400).json({ error: 'Все поля обязательны для заполнения.' });
+    }
+
+    const scheduleStartTime = moment(`${date}T${start_time}`);
+    const scheduleEndTime = moment(`${date}T${end_time}`);
+
+
+    db.get(`
+        SELECT m.facility_id, p.payment_date, m.duration
+        FROM payments p
+        JOIN memberships m ON p.membership_id = m.id
+        WHERE p.client_id = ?
+        ORDER BY p.payment_date DESC
+        LIMIT 1
+    `, [client_id], (err, row) => {
+        if (err) {
+            console.error('Error checking client membership for schedule:', err);
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!row) {
+            return res.status(400).json({ error: 'Клиент не имеет активного абонемента для добавления занятия.' });
+        }
+
+        const paymentDate = moment(row.payment_date);
+        const membershipEndDate = paymentDate.add(row.duration, 'months');
+
+        if (scheduleStartTime.isAfter(membershipEndDate)) {
+            return res.status(400).json({ error: 'Срок действия абонемента клиента истёк.' });
+        }
+
+        if (row.facility_id && row.facility_id !== parseInt(facility_id)) {
+            return res.status(400).json({ error: 'Зал для занятия не соответствует залу в абонементе клиента.' });
+        }
+
+
+        db.get(
+            'SELECT COUNT(*) as count FROM schedule WHERE facility_id = ? AND date = ? AND ((start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?)) ',
+            [facility_id, date, end_time, start_time, end_time, start_time],
+            (err, existingSchedule) => {
+                if (err) {
+                    res.status(500).json({ error: err.message });
+                    return;
+                }
+                if (existingSchedule.count > 0) {
+                    res.status(400).json({ error: 'Выбранное время уже занято для данного зала.' });
+                    return;
+                }
+
+
+                db.run('INSERT INTO schedule (client_id, facility_id, date, start_time, end_time, activity_name, trainer) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [client_id, facility_id, date, start_time, end_time, activity_name, trainer],
+                    function(err) {
+                        if (err) {
+                            res.status(500).json({ error: err.message });
+                            return;
+                        }
+                        res.json({ id: this.lastID });
+                    });
             }
-            res.json({ id: this.lastID });
-        });
+        );
+    });
 });
 
 app.get('/api/schedule/:id', (req, res) => {
@@ -338,7 +485,13 @@ app.delete('/api/payments/:id', (req, res) => {
 });
 
 app.get('/api/memberships', (req, res) => {
-    db.all('SELECT * FROM memberships ORDER BY name', [], (err, rows) => {
+    const query = `
+        SELECT m.*, f.name as facility_name
+        FROM memberships m
+        LEFT JOIN facilities f ON m.facility_id = f.id
+        ORDER BY m.name
+    `;
+    db.all(query, [], (err, rows) => {
         if (err) {
             res.status(500).json({ error: err.message });
             return;
@@ -348,9 +501,9 @@ app.get('/api/memberships', (req, res) => {
 });
 
 app.post('/api/memberships', (req, res) => {
-    const { name, duration, price, description } = req.body;
-    db.run('INSERT INTO memberships (name, duration, price, description) VALUES (?, ?, ?, ?)',
-        [name, duration, price, description],
+    const { name, duration, price, description, facility_id } = req.body;
+    db.run('INSERT INTO memberships (name, duration, price, description, facility_id) VALUES (?, ?, ?, ?, ?)',
+        [name, duration, price, description, facility_id],
         function(err) {
             if (err) {
                 res.status(500).json({ error: err.message });
@@ -480,6 +633,88 @@ app.get('/api/facilities', (req, res) => {
             return;
         }
         res.json(rows);
+    });
+});
+
+app.get('/api/facilities/:id', (req, res) => {
+    db.get('SELECT * FROM facilities WHERE id = ?', [req.params.id], (err, row) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+        if (!row) {
+            res.status(404).json({ error: 'Зал не найден.' });
+            return;
+        }
+        res.json(row);
+    });
+});
+
+app.get('/api/clients/:id/active-membership', (req, res) => {
+    db.get(`
+        SELECT m.facility_id, p.payment_date, m.duration
+        FROM payments p
+        JOIN memberships m ON p.membership_id = m.id
+        WHERE p.client_id = ?
+        ORDER BY p.payment_date DESC
+        LIMIT 1
+    `, [req.params.id], (err, row) => {
+        if (err) {
+            console.error('Error checking client membership:', err);
+            return res.status(500).json({ error: err.message });
+        }
+
+        if (!row) {
+            return res.status(400).json({ error: 'Клиент не имеет активного абонемента.' });
+        }
+
+        const paymentDate = moment(row.payment_date);
+        const membershipEndDate = paymentDate.add(row.duration, 'months');
+
+        res.json({
+            facility_id: row.facility_id,
+            payment_date: row.payment_date,
+            membership_end_date: membershipEndDate.format('YYYY-MM-DD')
+        });
+    });
+});
+
+app.get('/api/payments/download-csv', (req, res) => {
+    const query = `
+        SELECT p.payment_date, c.name as client_name, m.name as membership_name, m.duration as membership_duration, p.amount
+        FROM payments p
+        LEFT JOIN clients c ON p.client_id = c.id
+        LEFT JOIN memberships m ON p.membership_id = m.id
+        ORDER BY p.payment_date DESC
+    `;
+
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            res.status(500).json({ error: err.message });
+            return;
+        }
+
+        if (rows.length === 0) {
+            return res.status(204).send(); 
+        }
+
+
+        const headers = ['Дата оплаты', 'Клиент', 'Абонемент', 'Длительность (месяцев)', 'Сумма'];
+        let csv = '\ufeff' + headers.join(',') + '\n';
+
+        rows.forEach(row => {
+            const paymentDate = moment(row.payment_date).format('YYYY-MM-DD');
+            const clientName = row.client_name || '';
+            const membershipName = row.membership_name || '';
+            const membershipDuration = row.membership_duration || '';
+            const amount = row.amount;
+
+            csv += `"${paymentDate}","${clientName}","${membershipName}","${membershipDuration}","${amount}"\n`;
+        });
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="payments.csv"');
+        res.send(csv);
     });
 });
 

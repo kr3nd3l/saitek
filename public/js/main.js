@@ -102,6 +102,54 @@ document.addEventListener('DOMContentLoaded', () => {
         form.querySelector('[name="start_time"]').value = startTime;
         form.querySelector('[name="end_time"]').value = endTime;
 
+        const clientSelect = form.querySelector('select[name="client_id"]');
+        const facilitySelectForm = form.querySelector('select[name="facility_id"]');
+        const submitButton = form.querySelector('button[type="submit"]');
+
+        populateBookingFacilities(facilitySelectForm, null); 
+        facilitySelectForm.classList.add('disabled-look'); 
+        submitButton.disabled = true;
+
+        populateBookingClients(clientSelect);
+
+        clientSelect.removeEventListener('change', handleClientSelectChange);
+        clientSelect.addEventListener('change', handleClientSelectChange);
+
+        async function handleClientSelectChange() {
+            const clientId = clientSelect.value;
+            console.log('Client selected:', clientId);
+            if (clientId) {
+                try {
+                    const membershipInfo = await fetchData(`clients/${clientId}/active-membership`);
+                    console.log('Membership info for client:', membershipInfo);
+                    if (membershipInfo && membershipInfo.facility_id) {
+                        await populateBookingFacilities(facilitySelectForm, membershipInfo.facility_id);
+                        facilitySelectForm.value = String(membershipInfo.facility_id);
+                        console.log(`Facility select value after setting: ${facilitySelectForm.value}, selectedIndex: ${facilitySelectForm.selectedIndex}`);
+                        console.log('Facility select HTML:', facilitySelectForm.outerHTML);
+                        facilitySelectForm.classList.add('disabled-look'); 
+                        submitButton.disabled = false; 
+                    } else {
+
+                        alert('У выбранного клиента нет активного абонемента или абонемент не привязан к залу.');
+                        populateBookingFacilities(facilitySelectForm, null); 
+                        facilitySelectForm.classList.add('disabled-look');
+                        submitButton.disabled = true;
+                    }
+                } catch (error) {
+                    console.error('Error fetching active membership:', error);
+                    alert('Ошибка при загрузке информации об абонементе клиента.');
+                    populateBookingFacilities(facilitySelectForm, null); 
+                    facilitySelectForm.classList.add('disabled-look');
+                    submitButton.disabled = true;
+                }
+            } else {
+                populateBookingFacilities(facilitySelectForm, null); 
+                facilitySelectForm.classList.add('disabled-look');
+                submitButton.disabled = true;
+            }
+        }
+
         bookingForm.classList.add('active');
     }
 
@@ -130,20 +178,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         
-        try {
-            const response = await postData('bookings', data);
-            if (response) {
-                bookingForm.classList.remove('active');
-                const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
-                await loadBookings(currentDate);
-                e.target.reset();
-                if (bookingsModal.classList.contains('active')) {
-                    await loadAndShowBookingsModal();
-                }
+        let response = await postData('bookings', { client_id: data.client_id, facility_id: data.facility_id, start_time: data.start_time, end_time: data.end_time });
+        
+        if (response && !response.error) {
+            bookingForm.classList.remove('active');
+            const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
+            await loadBookings(currentDate);
+            e.target.reset();
+            console.log('Attempting to reload bookings modal.', bookingsModal.classList.contains('active'));
+            if (bookingsModal.classList.contains('active')) {
+                await loadAndShowBookingsModal();
             }
-        } catch (error) {
-            console.error('Error creating booking:', error);
-            alert('Ошибка при создании бронирования');
+        } else {
+            const errorData = response && response.error ? response : { error: 'Неизвестная ошибка при обработке абонемента.' };
+            alert(`Ошибка: ${errorData.error}`);
         }
     });
 
@@ -347,21 +395,60 @@ document.addEventListener('DOMContentLoaded', () => {
         'Ольга Кузнецова'
     ];
 
+
+    const facilityActivitiesMap = {
+        '1': ['Силовая тренировка', 'Кардио'],   
+        '2': ['Плавание'],                   
+        '3': ['Йога', 'Пилатес']             
+    };
+
     function populateSelect(select, items, placeholder) {
-        select.innerHTML = `<option value="">${placeholder}</option>`;
+        select.innerHTML = '';
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = placeholder;
+        select.appendChild(defaultOption);
         items.forEach(item => {
             const option = document.createElement('option');
-            option.value = item;
-            option.textContent = item;
+            option.value = item.id;
+            option.textContent = item.name;
             select.appendChild(option);
         });
+    }
+
+
+    function populateActivitiesForFacility(facilityId, activitySelectElement) {
+        const activitiesForSelectedFacility = facilityActivitiesMap[facilityId] || [];
+        const formattedActivities = activitiesForSelectedFacility.map(activity => ({ id: activity, name: activity }));
+        populateSelect(activitySelectElement, formattedActivities, 'Выберите занятие');
+        if (activitiesForSelectedFacility.length === 0) {
+            activitySelectElement.classList.add('disabled-look');
+            activitySelectElement.disabled = true;
+        } else {
+            activitySelectElement.classList.remove('disabled-look');
+            activitySelectElement.disabled = false;
+        }
+    }
+
+    async function populateFacilitySelect(selectElement, placeholder) {
+        const facilities = await fetchData('facilities');
+        if (facilities) {
+            populateSelect(selectElement, facilities, placeholder);
+        }
     }
 
     function populateScheduleFormDropdowns() {
         const activitySelect = document.getElementById('activity-select');
         const trainerSelect = document.getElementById('trainer-select');
-        if (activitySelect) populateSelect(activitySelect, activities, 'Выберите занятие');
-        if (trainerSelect) populateSelect(trainerSelect, trainers, 'Выберите тренера');
+
+
+        const formattedTrainers = trainers.map(trainer => ({ id: trainer, name: trainer }));
+        if (trainerSelect) populateSelect(trainerSelect, formattedTrainers, 'Выберите тренера');
+
+
+        populateActivitiesForFacility(null, activitySelect); 
+        activitySelect.classList.add('disabled-look');
+        activitySelect.disabled = true;
     }
 
     async function loadSchedule() {
@@ -379,8 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
         scheduleTable.innerHTML = '';
         schedule.forEach(item => {
             const row = document.createElement('tr');
+            const formattedDate = new Date(item.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
             row.innerHTML = `
-                <td>${item.start_time} - ${item.end_time}</td>
+                <td>${formattedDate} ${item.start_time} - ${item.end_time}</td>
+                <td>${item.client_name || '-'}</td>
                 <td>${item.activity_name}</td>
                 <td>${item.facility_name}</td>
                 <td>${item.trainer || '-'}</td>
@@ -404,23 +493,172 @@ document.addEventListener('DOMContentLoaded', () => {
 
     addScheduleBtn.addEventListener('click', () => {
         editingScheduleId = null;
-        document.getElementById('new-schedule').reset();
+        const form = document.getElementById('new-schedule');
+        form.reset();
         scheduleForm.classList.add('active');
+
+        const scheduleClientSelect = form.querySelector('#schedule-client-select');
+        const scheduleFacilityFormSelect = form.querySelector('#schedule-facility-form-select');
+        const scheduleFormSubmitBtn = form.querySelector('button[type="submit"]');
+        const activitySelect = form.querySelector('#activity-select');
+
+
+        scheduleClientSelect.removeEventListener('change', handleScheduleClientSelectChange);
+        scheduleClientSelect.addEventListener('change', handleScheduleClientSelectChange);
+
+
+        scheduleFacilityFormSelect.removeEventListener('change', handleScheduleFacilitySelectChange);
+        scheduleFacilityFormSelect.addEventListener('change', handleScheduleFacilitySelectChange);
+
+
+        activitySelect.removeEventListener('change', handleScheduleActivitySelectChange);
+        activitySelect.addEventListener('change', handleScheduleActivitySelectChange);
+
+
+        populateBookingFacilities(scheduleFacilityFormSelect, null); 
+        scheduleFacilityFormSelect.classList.add('disabled-look'); 
+        scheduleFacilityFormSelect.value = ''; 
+
+        populateActivitiesForFacility(null, activitySelect); 
+        activitySelect.classList.add('disabled-look');
+        activitySelect.disabled = true;
+
+        scheduleFormSubmitBtn.disabled = true; 
+
+
+        populateBookingClients(scheduleClientSelect);
     });
+
+    async function handleScheduleClientSelectChange() {
+        const form = document.getElementById('new-schedule');
+        const scheduleClientSelect = form.querySelector('#schedule-client-select');
+        const scheduleFacilityFormSelect = form.querySelector('#schedule-facility-form-select');
+        const scheduleFormSubmitBtn = form.querySelector('button[type="submit"]');
+        const activitySelect = form.querySelector('#activity-select');
+
+        const clientId = scheduleClientSelect.value;
+        console.log('Schedule client selected:', clientId);
+
+        if (clientId) {
+            try {
+                const membershipInfo = await fetchData(`clients/${clientId}/active-membership`);
+                console.log('Membership info for client (schedule):', membershipInfo);
+
+                if (membershipInfo && membershipInfo.facility_id) {
+                    await populateBookingFacilities(scheduleFacilityFormSelect, membershipInfo.facility_id); 
+                    scheduleFacilityFormSelect.value = String(membershipInfo.facility_id); 
+                    scheduleFacilityFormSelect.classList.remove('disabled-look'); 
+                    scheduleFacilityFormSelect.disabled = false; 
+
+                    populateActivitiesForFacility(scheduleFacilityFormSelect.value, activitySelect); 
+
+                    console.log('handleScheduleClientSelectChange - Facility selected by membership:', scheduleFacilityFormSelect.value);
+                    console.log('handleScheduleClientSelectChange - Activity select value (after populate):', activitySelect.value);
+                    
+
+                    handleScheduleActivitySelectChange();
+
+                    console.log('handleScheduleClientSelectChange - Submit button disabled state:', scheduleFormSubmitBtn.disabled);
+                } else {
+                    alert('У выбранного клиента нет активного абонемента или абонемент не привязан к залу.');
+                    populateBookingFacilities(scheduleFacilityFormSelect, null); 
+                    scheduleFacilityFormSelect.classList.add('disabled-look');
+                    scheduleFacilityFormSelect.disabled = true; 
+                    scheduleFacilityFormSelect.value = '';
+
+                    populateActivitiesForFacility(null, activitySelect);
+                    activitySelect.classList.add('disabled-look');
+                    activitySelect.disabled = true;
+
+                    scheduleFormSubmitBtn.disabled = true;
+                }
+            } catch (error) {
+                console.error('Error fetching active membership for schedule:', error);
+                alert('Ошибка при загрузке информации об абонементе клиента.');
+                populateBookingFacilities(scheduleFacilityFormSelect, null); 
+                scheduleFacilityFormSelect.classList.add('disabled-look');
+                scheduleFacilityFormSelect.disabled = true;
+                scheduleFacilityFormSelect.value = '';
+
+                populateActivitiesForFacility(null, activitySelect); 
+                activitySelect.classList.add('disabled-look');
+                activitySelect.disabled = true;
+
+                scheduleFormSubmitBtn.disabled = true;
+            }
+        } else {
+
+            populateBookingFacilities(scheduleFacilityFormSelect, null); 
+            scheduleFacilityFormSelect.classList.add('disabled-look');
+            scheduleFacilityFormSelect.disabled = true;
+            scheduleFacilityFormSelect.value = '';
+
+            populateActivitiesForFacility(null, activitySelect); 
+            activitySelect.classList.add('disabled-look');
+            activitySelect.disabled = true;
+
+            scheduleFormSubmitBtn.disabled = true;
+        }
+    }
+
+    function handleScheduleFacilitySelectChange() {
+        const form = document.getElementById('new-schedule');
+        const scheduleFacilityFormSelect = form.querySelector('#schedule-facility-form-select');
+        const activitySelect = form.querySelector('#activity-select');
+        const scheduleFormSubmitBtn = form.querySelector('button[type="submit"]');
+
+        const selectedFacilityId = scheduleFacilityFormSelect.value;
+        populateActivitiesForFacility(selectedFacilityId, activitySelect);
+
+        console.log('handleScheduleFacilitySelectChange - Selected facility ID:', selectedFacilityId);
+        console.log('handleScheduleFacilitySelectChange - Activity select value (after populate):', activitySelect.value);
+        
+
+        handleScheduleActivitySelectChange();
+
+        console.log('handleScheduleFacilitySelectChange - Submit button disabled state:', scheduleFormSubmitBtn.disabled);
+    }
+
+    function handleScheduleActivitySelectChange() {
+        const form = document.getElementById('new-schedule');
+        const scheduleFacilityFormSelect = form.querySelector('#schedule-facility-form-select');
+        const activitySelect = form.querySelector('#activity-select');
+        const scheduleFormSubmitBtn = form.querySelector('button[type="submit"]');
+
+        const selectedFacilityId = scheduleFacilityFormSelect.value;
+        const selectedActivityValue = activitySelect.value;
+
+        if (selectedFacilityId && selectedActivityValue) {
+            scheduleFormSubmitBtn.disabled = false;
+            console.log('handleScheduleActivitySelectChange - Submit button enabled.');
+        } else {
+            scheduleFormSubmitBtn.disabled = true;
+            console.log('handleScheduleActivitySelectChange - Submit button disabled.');
+        }
+    }
 
     let editingScheduleId = null;
 
     async function deleteSchedule(id) {
-        if (!confirm('Вы уверены, что хотите удалить это занятие?')) return;
+        console.log(`Attempting to delete schedule item with ID: ${id}`);
+        if (!confirm('Вы уверены, что хотите удалить это занятие?')) {
+            console.log('Deletion cancelled by user.');
+            return;
+        }
         try {
             const response = await fetch(`${API_BASE_URL}/schedule/${id}`, { method: 'DELETE' });
+            console.log('Delete schedule response:', response);
             if (response.ok) {
+                console.log('Schedule item deleted successfully. Reloading schedule...');
                 await loadSchedule();
             } else {
-                alert('Ошибка при удалении занятия');
+                const errorData = await response.json();
+                console.error('Error deleting schedule item:', errorData);
+                alert(`Ошибка при удалении занятия: ${errorData.error || response.statusText}`);
             }
         } catch (error) {
-            alert('Ошибка при удалении занятия');
+            console.error('Network error during schedule deletion:', error);
+            alert('Ошибка при удалении занятия: Проблема с сетью или сервером.');
         }
     }
 
@@ -432,15 +670,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
             editingScheduleId = id;
             const form = document.getElementById('new-schedule');
-            form.querySelector('[name="facility_id"]').value = item.facility_id;
+            const scheduleClientSelect = form.querySelector('#schedule-client-select');
+            const scheduleFacilityFormSelect = form.querySelector('#schedule-facility-form-select');
+            const activitySelect = form.querySelector('#activity-select');
+            const trainerSelect = form.querySelector('#trainer-select');
+            const scheduleFormSubmitBtn = form.querySelector('button[type="submit"]');
+
+
+            await populateBookingClients(scheduleClientSelect); 
+            scheduleClientSelect.value = String(item.client_id || ''); 
+
+
+            await populateBookingFacilities(scheduleFacilityFormSelect, item.facility_id);
+            scheduleFacilityFormSelect.value = String(item.facility_id);
+            scheduleFacilityFormSelect.classList.remove('disabled-look');
+            scheduleFacilityFormSelect.disabled = false;
+
+
+            populateActivitiesForFacility(String(item.facility_id), activitySelect);
+            activitySelect.value = item.activity_name; 
+
+
+            const formattedTrainers = trainers.map(trainer => ({ id: trainer, name: trainer }));
+            populateSelect(trainerSelect, formattedTrainers, 'Выберите тренера');
+            trainerSelect.value = item.trainer;
+
             form.querySelector('[name="date"]').value = item.date;
             form.querySelector('[name="start_time"]').value = item.start_time;
             form.querySelector('[name="end_time"]').value = item.end_time;
-            form.querySelector('[name="activity_name"]').value = item.activity_name;
-            form.querySelector('[name="trainer"]').value = item.trainer;
+            
+
+            scheduleFormSubmitBtn.disabled = false;
 
             scheduleForm.classList.add('active');
-        } catch {
+        } catch (error) {
+            console.error('Ошибка при загрузке занятия для редактирования:', error);
             alert('Ошибка при загрузке занятия');
         }
     }
@@ -450,9 +714,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
 
+
+        data.client_id = document.getElementById('schedule-client-select').value;
+
+
         try {
             let response;
             if (editingScheduleId) {
+
+                data.facility_id = document.getElementById('schedule-facility-form-select').value;
                 response = await fetch(`${API_BASE_URL}/schedule/${editingScheduleId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -465,13 +735,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify(data)
                 });
             }
-            if (!response.ok) throw new Error();
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Неизвестная ошибка');
+            }
             scheduleForm.classList.remove('active');
             await loadSchedule();
             editingScheduleId = null;
             e.target.reset();
-        } catch {
-            alert('Ошибка при сохранении занятия');
+            alert('Занятие успешно сохранено!');
+        } catch (error) {
+            console.error('Ошибка при сохранении занятия:', error);
+            alert(`Ошибка при сохранении занятия: ${error.message}`);
         }
     });
 
@@ -583,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
             select.innerHTML = '<option value="">Выберите зал</option>';
             facilities.forEach(facility => {
                 const option = document.createElement('option');
-                option.value = facility.id;
+                option.value = String(facility.id);
                 option.textContent = facility.name;
                 select.appendChild(option);
             });
@@ -598,49 +873,72 @@ document.addEventListener('DOMContentLoaded', () => {
             select.innerHTML = '<option value="">Выберите абонемент</option>';
             memberships.forEach(membership => {
                 const option = document.createElement('option');
-                option.value = membership.id;
-                option.textContent = `${membership.name} (${membership.duration}, ${membership.price}₽)`;
+                option.value = String(membership.id);
+                option.textContent = `${membership.name} (${membership.duration} месяцев, ${membership.price.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 })})`;
                 select.appendChild(option);
             });
         });
     }
 
-    async function populateBookingClients() {
-        const clientSelects = [
+    async function populateBookingClients(selectElement = null) {
+        const clientSelects = selectElement ? [selectElement] : [
             document.querySelector('#new-booking select[name="client_id"]'),
             document.querySelector('#new-payment select[name="client_id"]')
         ].filter(Boolean);
 
-        console.log('populateBookingClients called');
-        console.log('Target client selects:', clientSelects);
-
         const clients = await fetchData('clients');
-        console.log('Fetched clients:', clients);
         if (!clients) return;
 
         clientSelects.forEach(select => {
-            console.log('Populating client select:', select);
             select.innerHTML = '<option value="">Выберите клиента</option>';
             clients.forEach(client => {
                 const option = document.createElement('option');
-                option.value = client.id;
+                option.value = String(client.id);
                 option.textContent = client.name;
                 select.appendChild(option);
             });
         });
     }
 
-    async function populateBookingFacilities() {
-        const facilitySelect = document.querySelector('#new-booking select[name="facility_id"]');
-        if (!facilitySelect) return;
-        const facilities = await fetchData('facilities');
-        facilitySelect.innerHTML = '<option value="">Выберите зал</option>';
-        facilities.forEach(facility => {
-            const option = document.createElement('option');
-            option.value = facility.id;
-            option.textContent = facility.name;
-            facilitySelect.appendChild(option);
-        });
+    async function populateBookingFacilities(selectElement, selectedFacilityId = null) {
+
+        while (selectElement.firstChild) {
+            selectElement.removeChild(selectElement.firstChild);
+        }
+
+        if (selectedFacilityId) {
+
+            const facility = await fetchData(`facilities/${selectedFacilityId}`);
+            if (facility) {
+                const option = document.createElement('option');
+                option.value = String(facility.id);
+                option.textContent = facility.name;
+                option.selected = true; 
+                selectElement.appendChild(option);
+            } else {
+
+                const defaultOption = document.createElement('option');
+                defaultOption.value = '';
+                defaultOption.textContent = 'Зал не найден'; 
+                selectElement.appendChild(defaultOption);
+            }
+        } else {
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Выберите зал';
+            selectElement.appendChild(defaultOption);
+
+            const facilities = await fetchData('facilities');
+            if (facilities) {
+                facilities.forEach(facility => {
+                    const option = document.createElement('option');
+                    option.value = String(facility.id);
+                    option.textContent = facility.name;
+                    selectElement.appendChild(option);
+                });
+            }
+        }
     }
 
     function initializePages() {
@@ -650,9 +948,9 @@ document.addEventListener('DOMContentLoaded', () => {
         loadPayments();
         loadStatistics();
         populateScheduleFormDropdowns();
-        populateBookingClients();
+        populateBookingClients(document.querySelector('#new-payment select[name="client_id"]')); 
         populateMemberships();
-        populateBookingFacilities();
+
     }
 
     document.querySelectorAll('.cancel').forEach(button => {
@@ -725,30 +1023,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-
     const membershipsTable = document.getElementById('memberships-table')?.querySelector('tbody');
     const membershipForm = document.getElementById('membership-form');
     const addMembershipBtn = document.getElementById('add-membership-btn');
-    let editingMembershipId = null;
 
     async function loadMemberships() {
-        if (!membershipsTable) return;
         const memberships = await fetchData('memberships');
+        if (!memberships) return;
+
+        const membershipsTable = document.getElementById('memberships-table').querySelector('tbody');
         membershipsTable.innerHTML = '';
-        if (!memberships || memberships.length === 0) {
-            membershipsTable.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">Нет абонементов</td></tr>';
-            return;
-        }
-        memberships.forEach(m => {
+
+        memberships.forEach(membership => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${m.name}</td>
-                <td>${m.duration || '-'}</td>
-                <td>${m.price}₽</td>
-                <td><button class="delete-membership-btn" data-id="${m.id}">Удалить</button></td>
+                <td>${membership.name}</td>
+                <td>${membership.duration} месяцев</td>
+                <td>${membership.price.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 })}</td>
+                <td>${membership.facility_name || '-'}</td>
+                <td>
+                    <button class="delete-membership-btn" data-id="${membership.id}">Удалить</button>
+                </td>
             `;
             membershipsTable.appendChild(row);
         });
+
         document.querySelectorAll('.delete-membership-btn').forEach(btn => {
             btn.addEventListener('click', () => deleteMembership(btn.dataset.id));
         });
@@ -773,41 +1072,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    addMembershipBtn?.addEventListener('click', async () => {
+    addMembershipBtn.addEventListener('click', async () => {
         editingMembershipId = null;
         const form = document.getElementById('new-membership');
         form.reset();
+        await populateFacilitySelect(form.querySelector('[name="facility_id"]'), 'Выберите зал');
+        form.querySelector('[name="facility_id"]').value = ''; 
 
-        const facilitySelect = form.querySelector('select[name="facility_id"]');
-        if (facilitySelect) {
-            facilitySelect.innerHTML = '<option value="">Выберите зал</option>';
-            const facilities = await fetchData('facilities');
-            if (facilities) {
-                facilities.forEach(facility => {
-                    const option = document.createElement('option');
-                    option.value = facility.id;
-                    option.textContent = facility.name;
-                    facilitySelect.appendChild(option);
-                });
-            }
-        }
+        const formTitle = form.closest('.modal-content').querySelector('h3');
+        formTitle.textContent = 'Добавить абонемент';
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.textContent = 'Сохранить';
+        
         membershipForm.classList.add('active');
     });
 
-    document.getElementById('new-membership')?.addEventListener('submit', async (e) => {
+    document.getElementById('new-membership').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
-        const response = await postData('memberships', data);
-        if (response && response.id) {
+
+        const name = data.name.trim();
+        const duration = parseInt(data.duration);
+        const price = parseFloat(data.price);
+        const description = data.description ? data.description.trim() : null;
+        const facility_id = data.facility_id ? parseInt(data.facility_id) : null;
+
+        if (!name || isNaN(duration) || isNaN(price)) {
+            alert('Пожалуйста, заполните все обязательные поля (Название, Длительность, Цена).');
+            return;
+        }
+
+        let response = await postData('memberships', { name, duration, price, description, facility_id });
+        
+        if (response && !response.error) {
             membershipForm.classList.remove('active');
             loadMemberships();
             e.target.reset();
         } else {
-            alert('Ошибка при добавлении абонемента');
+            const errorData = response && response.error ? response : { error: 'Неизвестная ошибка при обработке абонемента.' };
+            alert(`Ошибка: ${errorData.error}`);
         }
     });
-
 
     loadMemberships();
 
@@ -825,5 +1131,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             alert('Ошибка при удалении оплаты');
         }
+    }
+
+
+    const downloadPaymentsCsvBtn = document.getElementById('download-payments-csv-btn');
+    if (downloadPaymentsCsvBtn) {
+        downloadPaymentsCsvBtn.addEventListener('click', () => {
+            window.open('/api/payments/download-csv', '_blank');
+        });
     }
 }); 
