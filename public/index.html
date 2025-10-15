@@ -20,6 +20,9 @@
                 <li><a href="#" data-page="payments">Оплаты</a></li>
                 <li><a href="#" data-page="statistics">Статистика</a></li>
                 <li><a href="#" data-page="memberships">Абонементы</a></li>
+                <li><a href="#" data-page="notifications">Уведомления</a></li>
+                <li><a href="#" data-page="reports">Отчеты</a></li>
+                <li><a href="#" data-page="support">Поддержка</a></li>
             </ul>
         </div>
     </nav>
@@ -29,9 +32,6 @@
             <h2>Бронирование</h2>
             <div class="calendar-controls">
                 <input type="text" id="calendar-date" class="date-picker" placeholder="Выберите дату">
-                <select id="facility-select">
-                    <option value="">Выберите зал</option>
-                </select>
                 <button id="view-bookings-btn" type="button">Посмотреть бронирования</button>
             </div>
             <div class="calendar-container">
@@ -165,7 +165,6 @@
                         <select name="membership_id" required>
                             <option value="">Выберите абонемент</option>
                         </select>
-                        <input type="number" name="amount" placeholder="Сумма" required>
                         <button type="submit">Сохранить</button>
                         <button type="button" class="cancel">Отмена</button>
                     </form>
@@ -213,7 +212,7 @@
                     <h3>Добавить абонемент</h3>
                     <form id="new-membership">
                         <input type="text" name="name" placeholder="Название" required>
-                        <input type="text" name="duration" placeholder="Длительность" required>
+                        <input type="number" name="duration" placeholder="Длительность" min="1" step="1" required>
                         <input type="number" name="price" placeholder="Цена" required>
                         <select name="facility_id" required>
                             <option value="">Выберите зал</option>
@@ -221,6 +220,266 @@
                         <button type="submit">Сохранить</button>
                         <button type="button" class="cancel">Отмена</button>
                     </form>
+                </div>
+            </div>
+        </div>
+
+        <div id="notifications-page" class="page">
+            <h2>Уведомления</h2>
+            <div class="notifications-container">
+                <ul id="notifications-list"></ul>
+            </div>
+        </div>
+
+        <div id="reports-page" class="page">
+            <h2>Отчеты</h2>
+            <div class="reports-controls">
+                <div class="report-type-section">
+                    <h3>Тип отчета</h3>
+                    <select id="report-type">
+                        <option value="">Выберите тип отчета</option>
+                        <option value="attendance">Отчет по посещаемости</option>
+                        <option value="financial">Финансовый отчет</option>
+                        <option value="occupancy">Отчет по загруженности объектов</option>
+                    </select>
+                </div>
+
+                <div class="report-period-section">
+                    <h3>Период</h3>
+                    <input type="text" id="report-start-date" class="date-picker" placeholder="Начало периода">
+                    <input type="text" id="report-end-date" class="date-picker" placeholder="Конец периода">
+                </div>
+
+                <div class="report-format-section">
+                    <h3>Формат экспорта</h3>
+                    <select id="report-format">
+                        <option value="pdf">PDF</option>
+                        <option value="excel">Excel</option>
+                    </select>
+                </div>
+
+                <div class="report-schedule-section">
+                    <h3>Автоматическая генерация</h3>
+                    <select id="report-schedule">
+                        <option value="">Не настроено</option>
+                        <option value="daily">Ежедневно</option>
+                        <option value="weekly">Еженедельно</option>
+                        <option value="monthly">Ежемесячно</option>
+                    </select>
+                    <input type="email" id="report-email" placeholder="Email для отправки">
+                </div>
+
+                <button id="generate-report-btn" class="primary-btn">Сгенерировать отчет</button>
+                <button id="save-schedule-btn" class="primary-btn">Сохранить расписание</button>
+            </div>
+
+            <div class="report-preview">
+                <h3>Предпросмотр отчета</h3>
+                <div id="report-content"></div>
+            </div>
+        </div>
+
+        <div id="support-page" class="page">
+            <h2>Поддержка пользователей</h2>
+            
+            <div class="support-tabs">
+                <button class="tab-btn active" data-tab="instructions">Инструкции</button>
+                <button class="tab-btn" data-tab="faq">FAQ</button>
+            </div>
+
+            <div id="instructions-tab" class="tab-content active">
+                <div class="instructions-section">
+                    <h3>Инструкция по работе с системой</h3>
+                    
+                    <div class="instruction-block">
+                        <h4>1. Бронирование залов</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Бронирование"</li>
+                            <li>Выберите нужный зал из выпадающего списка</li>
+                            <li>Выберите дату в календаре</li>
+                            <li>Нажмите на свободный временной слот (зеленый)</li>
+                            <li>Заполните форму бронирования:
+                                <ul>
+                                    <li>Выберите клиента из списка или создайте нового</li>
+                                    <li>Укажите время начала и окончания</li>
+                                    <li>Выберите абонемент (если есть)</li>
+                                </ul>
+                            </li>
+                            <li>Нажмите "Забронировать"</li>
+                        </ol>
+                    </div>
+
+                    <div class="instruction-block">
+                        <h4>2. Управление клиентами</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Клиенты"</li>
+                            <li>Для добавления нового клиента нажмите "Добавить клиента"</li>
+                            <li>Заполните все обязательные поля (имя, телефон, email)</li>
+                            <li>Для редактирования клиента нажмите на кнопку "Изменить"</li>
+                            <li>Для удаления клиента нажмите на кнопку "Удалить"</li>
+                        </ol>
+                    </div>
+
+                    <div class="instruction-block">
+                        <h4>3. Управление абонементами</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Абонементы"</li>
+                            <li>Для создания абонемента нажмите "Добавить абонемент"</li>
+                            <li>Выберите клиента и зал</li>
+                            <li>Укажите тип абонемента и количество занятий</li>
+                            <li>Установите дату начала и окончания</li>
+                            <li>Нажмите "Сохранить"</li>
+                        </ol>
+                    </div>
+
+                    <div class="instruction-block">
+                        <h4>4. Просмотр расписания</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Расписание"</li>
+                            <li>Выберите зал для фильтрации (опционально)</li>
+                            <li>Выберите дату в календаре</li>
+                            <li>Просматривайте занятые и свободные слоты</li>
+                            <li>Используйте кнопки навигации для перехода между днями</li>
+                        </ol>
+                    </div>
+
+                    <div class="instruction-block">
+                        <h4>5. Управление оплатами</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Оплаты"</li>
+                            <li>Для добавления оплаты нажмите "Добавить оплату"</li>
+                            <li>Выберите клиента и абонемент</li>
+                            <li>Укажите сумму и дату оплаты</li>
+                            <li>Нажмите "Сохранить"</li>
+                        </ol>
+                    </div>
+
+                    <div class="instruction-block">
+                        <h4>6. Генерация отчетов</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Отчеты"</li>
+                            <li>Выберите тип отчета (посещаемость, финансовый, загруженность)</li>
+                            <li>Укажите период отчета</li>
+                            <li>Выберите формат экспорта (PDF/Excel)</li>
+                            <li>Нажмите "Сгенерировать отчет"</li>
+                            <li>Для автоматической генерации настройте расписание</li>
+                        </ol>
+                    </div>
+
+                    <div class="instruction-block">
+                        <h4>7. Просмотр уведомлений</h4>
+                        <ol>
+                            <li>Перейдите в раздел "Уведомления"</li>
+                            <li>Просматривайте все системные уведомления</li>
+                            <li>Уведомления отображаются в хронологическом порядке</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <div id="faq-tab" class="tab-content">
+                <div class="faq-section">
+                    <h3>Часто задаваемые вопросы</h3>
+                    
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Как забронировать зал?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Перейдите в раздел "Бронирование", выберите зал и дату, затем нажмите на свободный временной слот и заполните форму бронирования.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Можно ли отменить бронирование?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Да, вы можете отменить бронирование. В разделе "Бронирование" нажмите на занятый слот и выберите "Отменить бронирование".</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Как создать абонемент для клиента?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Перейдите в раздел "Абонементы", нажмите "Добавить абонемент", выберите клиента и зал, укажите тип и количество занятий, затем сохраните.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Как посмотреть статистику посещений?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Используйте раздел "Отчеты" - выберите "Отчет по посещаемости", укажите период и сгенерируйте отчет в нужном формате.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Можно ли экспортировать данные в Excel?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Да, в разделе "Отчеты" вы можете выбрать формат экспорта Excel для любого типа отчета.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Как настроить автоматическую отправку отчетов?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>В разделе "Отчеты" выберите тип отчета, укажите расписание (ежедневно/еженедельно/ежемесячно), введите email и нажмите "Сохранить расписание".</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Что делать, если не получается забронировать слот?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Убедитесь, что выбранный слот свободен (зеленый цвет), проверьте, что у клиента есть действующий абонемент, и что время не пересекается с другими бронированиями.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Как добавить нового клиента?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Перейдите в раздел "Клиенты", нажмите "Добавить клиента", заполните форму (имя, телефон, email обязательны) и сохраните.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Можно ли изменить время бронирования?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Да, отмените текущее бронирование и создайте новое с нужным временем, или используйте функцию редактирования в списке бронирований.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item">
+                        <div class="faq-question">
+                            <h4>Как посмотреть историю платежей клиента?</h4>
+                            <span class="faq-toggle">+</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Перейдите в раздел "Оплаты" и используйте фильтр по клиенту, или сгенерируйте финансовый отчет с указанием конкретного клиента.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

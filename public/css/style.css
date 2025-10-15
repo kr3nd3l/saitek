@@ -116,6 +116,8 @@ th {
 
 .calendar-controls {
     display: flex;
+    justify-content: center;
+    align-items: center;
     gap: 1rem;
     margin-bottom: 1rem;
 }
@@ -278,7 +280,6 @@ th {
     }
 }
 
-
 .error-input {
     border-color: #ff4444 !important;
     background-color: #fff8f8 !important;
@@ -290,7 +291,6 @@ th {
     margin-top: 4px;
     margin-bottom: 8px;
 }
-
 
 .client-form {
     max-width: 500px;
@@ -341,4 +341,237 @@ th {
 
 .client-form button:hover {
     background: #45a049;
+}
+
+.cancel-booking-btn {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.95em;
+    margin-left: 10px;
+}
+
+.cancel-booking-btn:hover {
+    background-color: #da190b;
+}
+
+.reports-controls {
+    display: grid;
+    grid-gap: 2rem;
+    margin-bottom: 2rem;
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.reports-controls h3 {
+    margin-bottom: 1rem;
+    color: #333;
+    font-size: 1.1rem;
+}
+
+.report-type-section,
+.report-period-section,
+.report-format-section,
+.report-schedule-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.report-period-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.report-preview {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.report-preview h3 {
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+#report-content {
+    min-height: 200px;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+#save-schedule-btn {
+    background-color: #28a745;
+}
+
+#save-schedule-btn:hover {
+    background-color: #218838;
+}
+
+@media (max-width: 768px) {
+    .reports-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .report-period-section {
+        grid-template-columns: 1fr;
+    }
+}
+
+.support-tabs {
+    display: flex;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 1rem 2rem;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #666;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.tab-btn.active {
+    color: #007bff;
+    border-bottom-color: #007bff;
+    font-weight: 600;
+}
+
+.tab-btn:hover {
+    color: #007bff;
+    background-color: #f8f9fa;
+}
+
+.tab-content {
+    display: none;
+    background: #fff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.instructions-section h3,
+.faq-section h3 {
+    margin-bottom: 2rem;
+    color: #333;
+    font-size: 1.5rem;
+}
+
+.instruction-block {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+}
+
+.instruction-block h4 {
+    color: #007bff;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+}
+
+.instruction-block ol {
+    margin-left: 1.5rem;
+}
+
+.instruction-block li {
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+}
+
+.instruction-block ul {
+    margin-left: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+.faq-item {
+    margin-bottom: 1rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.faq-question {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.faq-question:hover {
+    background: #e9ecef;
+}
+
+.faq-question h4 {
+    margin: 0;
+    color: #333;
+    font-size: 1rem;
+}
+
+.faq-toggle {
+    font-size: 1.5rem;
+    color: #007bff;
+    font-weight: bold;
+    transition: transform 0.3s ease;
+}
+
+.faq-item.active .faq-toggle {
+    transform: rotate(45deg);
+}
+
+.faq-answer {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    background: #fff;
+}
+
+.faq-item.active .faq-answer {
+    max-height: 200px;
+}
+
+.faq-answer p {
+    margin: 0;
+    padding: 1rem 1.5rem;
+    line-height: 1.6;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .support-tabs {
+        flex-direction: column;
+    }
+    
+    .tab-btn {
+        text-align: left;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .tab-content {
+        padding: 1rem;
+    }
+    
+    .instruction-block {
+        padding: 1rem;
+    }
 } 

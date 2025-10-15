@@ -4,6 +4,10 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
 const moment = require('moment');
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
+const nodemailer = require('nodemailer');
+const schedule = require('node-schedule');
 
 const app = express();
 const port = 3000;
@@ -18,6 +22,20 @@ const db = new sqlite3.Database('sports_complex.db', (err) => {
     } else {
         console.log('Connected to SQLite database');
         initializeDatabase();
+    }
+});
+
+// Хранилище для расписаний отчетов
+const reportSchedules = new Map();
+
+// Конфигурация почтового сервера
+const transporter = nodemailer.createTransport({
+    host: 'smtp.example.com', // Замените на реальный SMTP сервер
+    port: 587,
+    secure: false,
+    auth: {
+        user: 'your-email@example.com', // Замените на реальный email
+        pass: 'your-password' // Замените на реальный пароль
     }
 });
 
@@ -717,6 +735,222 @@ app.get('/api/payments/download-csv', (req, res) => {
         res.send(csv);
     });
 });
+
+app.post('/api/reports/generate', async (req, res) => {
+    const { type, startDate, endDate, format } = req.body;
+    
+    try {
+        let reportData;
+        
+        switch (type) {
+            case 'attendance':
+                reportData = await generateAttendanceReport(startDate, endDate);
+                break;
+            case 'financial':
+                reportData = await generateFinancialReport(startDate, endDate);
+                break;
+            case 'occupancy':
+                reportData = await generateOccupancyReport(startDate, endDate);
+                break;
+            default:
+                throw new Error('Неизвестный тип отчета');
+        }
+
+        if (format === 'pdf') {
+            const pdfBuffer = await generatePDF(reportData, type);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename=report-${type}-${startDate}.pdf`);
+            res.send(pdfBuffer);
+        } else if (format === 'excel') {
+            const excelBuffer = await generateExcel(reportData, type);
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename=report-${type}-${startDate}.xlsx`);
+            res.send(excelBuffer);
+        } else {
+            res.json(reportData);
+        }
+    } catch (error) {
+        console.error('Error generating report:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/reports/schedule', (req, res) => {
+    const { type, schedule: scheduleType, email, format } = req.body;
+    
+    try {
+        const jobId = `${type}-${Date.now()}`;
+        let cronPattern;
+        
+        switch (scheduleType) {
+            case 'daily':
+                cronPattern = '0 0 * * *'; // Каждый день в полночь
+                break;
+            case 'weekly':
+                cronPattern = '0 0 * * 1'; // Каждый понедельник
+                break;
+            case 'monthly':
+                cronPattern = '0 0 1 * *'; // Первый день каждого месяца
+                break;
+            default:
+                throw new Error('Неверный тип расписания');
+        }
+
+        const job = schedule.scheduleJob(cronPattern, async () => {
+            const endDate = new Date().toISOString().split('T')[0];
+            const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            
+            try {
+                let reportData = await generateReport(type, startDate, endDate);
+                let attachment;
+                
+                if (format === 'pdf') {
+                    attachment = await generatePDF(reportData, type);
+                } else {
+                    attachment = await generateExcel(reportData, type);
+                }
+
+                await transporter.sendMail({
+                    from: 'your-email@example.com',
+                    to: email,
+                    subject: `Автоматический отчет: ${type}`,
+                    text: 'Во вложении находится автоматически сгенерированный отчет.',
+                    attachments: [{
+                        filename: `report-${type}-${startDate}.${format}`,
+                        content: attachment
+                    }]
+                });
+            } catch (error) {
+                console.error('Error in scheduled report generation:', error);
+            }
+        });
+
+        reportSchedules.set(jobId, job);
+        
+        res.json({ 
+            success: true, 
+            message: 'Расписание отчета создано',
+            scheduleId: jobId 
+        });
+    } catch (error) {
+        console.error('Error scheduling report:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+async function generateAttendanceReport(startDate, endDate) {
+    const query = `
+        SELECT 
+            b.start_time,
+            c.name as client_name,
+            f.name as facility_name,
+            COUNT(*) as visit_count
+        FROM bookings b
+        LEFT JOIN clients c ON b.client_id = c.id
+        LEFT JOIN facilities f ON b.facility_id = f.id
+        WHERE b.start_time BETWEEN ? AND ?
+        GROUP BY c.id, f.id
+        ORDER BY c.name, f.name
+    `;
+    
+    return new Promise((resolve, reject) => {
+        db.all(query, [startDate, endDate], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+}
+
+async function generateFinancialReport(startDate, endDate) {
+    const query = `
+        SELECT 
+            p.payment_date,
+            c.name as client_name,
+            m.name as membership_name,
+            p.amount,
+            f.name as facility_name
+        FROM payments p
+        LEFT JOIN clients c ON p.client_id = c.id
+        LEFT JOIN memberships m ON p.membership_id = m.id
+        LEFT JOIN facilities f ON m.facility_id = f.id
+        WHERE p.payment_date BETWEEN ? AND ?
+        ORDER BY p.payment_date DESC
+    `;
+    
+    return new Promise((resolve, reject) => {
+        db.all(query, [startDate, endDate], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+}
+
+async function generateOccupancyReport(startDate, endDate) {
+    const query = `
+        SELECT 
+            f.name as facility_name,
+            COUNT(b.id) as total_bookings,
+            COUNT(DISTINCT b.client_id) as unique_clients,
+            f.capacity,
+            ROUND(CAST(COUNT(b.id) AS FLOAT) / (julianday(?) - julianday(?)) * 100, 2) as occupancy_rate
+        FROM facilities f
+        LEFT JOIN bookings b ON f.id = b.facility_id
+        AND b.start_time BETWEEN ? AND ?
+        GROUP BY f.id
+        ORDER BY f.name
+    `;
+    
+    return new Promise((resolve, reject) => {
+        db.all(query, [endDate, startDate, startDate, endDate], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+}
+
+async function generatePDF(data, type) {
+    return new Promise((resolve) => {
+        const doc = new PDFDocument();
+        const chunks = [];
+        
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+        doc.fontSize(16).text(`Отчет: ${type}`, { align: 'center' });
+        doc.moveDown();
+
+        if (Array.isArray(data)) {
+            data.forEach(row => {
+                doc.fontSize(12).text(Object.entries(row)
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join(', ')
+                );
+                doc.moveDown();
+            });
+        }
+
+        doc.end();
+    });
+}
+
+async function generateExcel(data, type) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(type);
+
+    if (Array.isArray(data) && data.length > 0) {
+        // Заголовки
+        worksheet.columns = Object.keys(data[0]).map(key => ({
+            header: key,
+            key: key,
+            width: 20
+        }));
+
+        // Данные
+        worksheet.addRows(data);
+    }
+
+    return await workbook.xlsx.writeBuffer();
+}
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);

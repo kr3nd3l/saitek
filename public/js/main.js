@@ -44,7 +44,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const calendarDate = document.getElementById('calendar-date');
-    const facilitySelect = document.getElementById('facility-select');
     const timeSlots = document.getElementById('time-slots');
     const bookingForm = document.getElementById('booking-form');
 
@@ -57,17 +56,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function loadBookings(date) {
-        const facilityId = facilitySelect.value;
         const startDate = date.toISOString().split('T')[0];
         const endDate = startDate;
 
         const bookings = await fetchData(`bookings?start_date=${startDate}&end_date=${endDate}`);
         if (!bookings) return;
 
-        displayTimeSlots(bookings, facilityId);
+        displayTimeSlots(bookings);
     }
 
-    function displayTimeSlots(bookings, facilityId) {
+    function displayTimeSlots(bookings) {
         timeSlots.innerHTML = '';
         const hours = Array.from({length: 24}, (_, i) => i);
         
@@ -76,16 +74,26 @@ document.addEventListener('DOMContentLoaded', () => {
             slot.className = 'time-slot';
             const time = `${hour.toString().padStart(2, '0')}:00`;
             
-            const isBooked = bookings.some(booking => {
+            const booking = bookings.find(booking => {
                 const bookingHour = new Date(booking.start_time).getHours();
-                return bookingHour === hour && 
-                       (!facilityId || booking.facility_id === parseInt(facilityId));
+                return bookingHour === hour;
             });
 
-            slot.classList.add(isBooked ? 'booked' : 'available');
-            slot.textContent = time;
-            
-            if (!isBooked) {
+            if (booking) {
+                slot.classList.add('booked');
+                slot.textContent = `${time} — Занято (${booking.facility_name || 'Зал'})`;
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = 'Отменить';
+                cancelBtn.className = 'cancel-booking-btn';
+                cancelBtn.style.marginLeft = '10px';
+                cancelBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteBooking(booking.id);
+                });
+                slot.appendChild(cancelBtn);
+            } else {
+                slot.classList.add('available');
+                slot.textContent = time;
                 slot.addEventListener('click', () => showBookingForm(hour));
             }
 
@@ -111,11 +119,10 @@ document.addEventListener('DOMContentLoaded', () => {
         submitButton.disabled = true;
 
         populateBookingClients(clientSelect);
+        clientSelect.removeEventListener('change', handleBookingClientSelectChange);
+        clientSelect.addEventListener('change', handleBookingClientSelectChange);
 
-        clientSelect.removeEventListener('change', handleClientSelectChange);
-        clientSelect.addEventListener('change', handleClientSelectChange);
-
-        async function handleClientSelectChange() {
+        async function handleBookingClientSelectChange() {
             const clientId = clientSelect.value;
             console.log('Client selected:', clientId);
             if (clientId) {
@@ -130,15 +137,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         facilitySelectForm.classList.add('disabled-look'); 
                         submitButton.disabled = false; 
                     } else {
-
-                        alert('У выбранного клиента нет активного абонемента или абонемент не привязан к залу.');
+                        if (!isShowingAlert) {
+                            isShowingAlert = true;
+                            alert('У выбранного клиента нет активного абонемента или абонемент не привязан к залу.');
+                            setTimeout(() => { isShowingAlert = false; }, 100);
+                        }
                         populateBookingFacilities(facilitySelectForm, null); 
                         facilitySelectForm.classList.add('disabled-look');
                         submitButton.disabled = true;
                     }
                 } catch (error) {
                     console.error('Error fetching active membership:', error);
-                    alert('Ошибка при загрузке информации об абонементе клиента.');
+                    if (!isShowingAlert) {
+                        isShowingAlert = true;
+                        alert('Ошибка при загрузке информации об абонементе клиента.');
+                        setTimeout(() => { isShowingAlert = false; }, 100);
+                    }
                     populateBookingFacilities(facilitySelectForm, null); 
                     facilitySelectForm.classList.add('disabled-look');
                     submitButton.disabled = true;
@@ -153,24 +167,24 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingForm.classList.add('active');
     }
 
-    async function deleteBooking(id) {
-        if (!confirm('Вы уверены, что хотите отменить это бронирование?')) return;
+    const notifications = [];
+    const notificationsList = document.getElementById('notifications-list');
+    let isShowingAlert = false; 
 
-        try {
-            const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
-                await loadBookings(currentDate);
-            } else {
-                alert('Ошибка при отмене бронирования');
-            }
-        } catch (error) {
-            console.error('Error deleting booking:', error);
-            alert('Ошибка при отмене бронирования');
-        }
+    function addNotification(message) {
+        const timestamp = new Date().toLocaleString();
+        notifications.unshift({ message, timestamp });
+        renderNotifications();
+    }
+
+    function renderNotifications() {
+        if (!notificationsList) return;
+        notificationsList.innerHTML = '';
+        notifications.forEach(n => {
+            const li = document.createElement('li');
+            li.textContent = `[${n.timestamp}] ${n.message}`;
+            notificationsList.appendChild(li);
+        });
     }
 
     document.getElementById('new-booking').addEventListener('submit', async (e) => {
@@ -185,15 +199,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
             await loadBookings(currentDate);
             e.target.reset();
-            console.log('Attempting to reload bookings modal.', bookingsModal.classList.contains('active'));
             if (bookingsModal.classList.contains('active')) {
                 await loadAndShowBookingsModal();
             }
+            addNotification('Новое бронирование успешно создано.');
         } else {
             const errorData = response && response.error ? response : { error: 'Неизвестная ошибка при обработке абонемента.' };
             alert(`Ошибка: ${errorData.error}`);
         }
     });
+
+    async function deleteBooking(id) {
+        if (!confirm('Вы уверены, что хотите отменить это бронирование?')) return;
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/bookings/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                const currentDate = calendarDate.value ? new Date(calendarDate.value) : new Date();
+                await loadBookings(currentDate);
+                addNotification('Бронирование было отменено.');
+            } else {
+                alert('Ошибка при отмене бронирования');
+            }
+        } catch (error) {
+            console.error('Error deleting booking:', error);
+            alert('Ошибка при отмене бронирования');
+        }
+    }
 
     const clientsTable = document.getElementById('clients-table').querySelector('tbody');
     const clientForm = document.getElementById('client-form');
@@ -358,6 +393,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             await loadClients();
             
+            await populateBookingClients(document.querySelector('#new-payment select[name="client_id"]'));
+            await populateBookingClients(document.querySelector('#new-booking select[name="client_id"]'));
+            await populateBookingClients(document.querySelector('#schedule-client-select'));
+            
             alert(editingClientId ? 'Клиент успешно обновлен' : 'Клиент успешно добавлен');
             
             editingClientId = null;
@@ -510,7 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
         scheduleFacilityFormSelect.removeEventListener('change', handleScheduleFacilitySelectChange);
         scheduleFacilityFormSelect.addEventListener('change', handleScheduleFacilitySelectChange);
 
-
         activitySelect.removeEventListener('change', handleScheduleActivitySelectChange);
         activitySelect.addEventListener('change', handleScheduleActivitySelectChange);
 
@@ -560,7 +598,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     console.log('handleScheduleClientSelectChange - Submit button disabled state:', scheduleFormSubmitBtn.disabled);
                 } else {
-                    alert('У выбранного клиента нет активного абонемента или абонемент не привязан к залу.');
+                    if (!isShowingAlert) {
+                        isShowingAlert = true;
+                        alert('У выбранного клиента нет активного абонемента или абонемент не привязан к залу.');
+                        setTimeout(() => { isShowingAlert = false; }, 100);
+                    }
                     populateBookingFacilities(scheduleFacilityFormSelect, null); 
                     scheduleFacilityFormSelect.classList.add('disabled-look');
                     scheduleFacilityFormSelect.disabled = true; 
@@ -574,7 +616,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (error) {
                 console.error('Error fetching active membership for schedule:', error);
-                alert('Ошибка при загрузке информации об абонементе клиента.');
+                if (!isShowingAlert) {
+                    isShowingAlert = true;
+                    alert('Ошибка при загрузке информации об абонементе клиента.');
+                    setTimeout(() => { isShowingAlert = false; }, 100);
+                }
                 populateBookingFacilities(scheduleFacilityFormSelect, null); 
                 scheduleFacilityFormSelect.classList.add('disabled-look');
                 scheduleFacilityFormSelect.disabled = true;
@@ -796,6 +842,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         
+        const membershipSelect = document.querySelector('#new-payment select[name="membership_id"]');
+        const selectedOption = membershipSelect?.selectedOptions?.[0];
+        const priceAttr = selectedOption ? selectedOption.getAttribute('data-price') : null;
+        if (priceAttr) {
+            data.amount = Number(priceAttr);
+        }
+        
         await postData('payments', data);
         paymentForm.classList.remove('active');
         loadPayments();
@@ -847,7 +900,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!facilities) return;
 
         const facilitySelects = [
-            document.getElementById('facility-select'),
             document.querySelector('#new-booking select[name="facility_id"]'),
             document.getElementById('schedule-facility'),
             document.querySelector('#new-schedule select[name="facility_id"]'),
@@ -875,6 +927,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const option = document.createElement('option');
                 option.value = String(membership.id);
                 option.textContent = `${membership.name} (${membership.duration} месяцев, ${membership.price.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 })})`;
+                option.setAttribute('data-price', String(membership.price));
                 select.appendChild(option);
             });
         });
@@ -959,11 +1012,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    facilitySelect.addEventListener('change', () => {
-        if (calendarDate.value) {
-            loadBookings(new Date(calendarDate.value));
-        }
-    });
 
     if (calendarDate.value) {
         loadBookings(new Date(calendarDate.value));
@@ -1017,6 +1065,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', async () => {
                 if (confirm('Удалить это бронирование?')) {
                     await fetch(`${API_BASE_URL}/bookings/${btn.dataset.id}`, { method: 'DELETE' });
+                    addNotification('Бронирование было отменено.');
                     await loadAndShowBookingsModal();
                 }
             });
@@ -1084,8 +1133,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const submitButton = form.querySelector('button[type="submit"]');
         submitButton.textContent = 'Сохранить';
         
+        const durationInput = form.querySelector('[name="duration"]');
+        const priceInput = form.querySelector('[name="price"]');
+        
+        durationInput.removeEventListener('input', handleDurationInput);
+        priceInput.removeEventListener('input', handlePriceInput);
+        
+        durationInput.addEventListener('input', handleDurationInput);
+        priceInput.addEventListener('input', handlePriceInput);
+        
         membershipForm.classList.add('active');
     });
+
+    function handleDurationInput(e) {
+        const value = parseInt(e.target.value);
+        if (value <= 0 && e.target.value !== '') {
+            e.target.value = '';
+            alert('Длительность должна быть положительным числом');
+        }
+    }
+
+    function handlePriceInput(e) {
+        const value = parseFloat(e.target.value);
+        if (value <= 0 && e.target.value !== '') {
+            e.target.value = '';
+            alert('Цена должна быть положительным числом');
+        }
+    }
 
     document.getElementById('new-membership').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1100,6 +1174,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!name || isNaN(duration) || isNaN(price)) {
             alert('Пожалуйста, заполните все обязательные поля (Название, Длительность, Цена).');
+            return;
+        }
+
+        if (duration <= 0) {
+            alert('Длительность абонемента должна быть положительным числом (больше 0).');
+            return;
+        }
+
+        if (price <= 0) {
+            alert('Цена абонемента должна быть положительным числом (больше 0).');
             return;
         }
 
@@ -1140,4 +1224,151 @@ document.addEventListener('DOMContentLoaded', () => {
             window.open('/api/payments/download-csv', '_blank');
         });
     }
+
+    const generateReportBtn = document.getElementById('generate-report-btn');
+    const saveScheduleBtn = document.getElementById('save-schedule-btn');
+    const reportContent = document.getElementById('report-content');
+
+    if (generateReportBtn) {
+        generateReportBtn.addEventListener('click', async () => {
+            const type = document.getElementById('report-type').value;
+            const startDate = document.getElementById('report-start-date').value;
+            const endDate = document.getElementById('report-end-date').value;
+            const format = document.getElementById('report-format').value;
+
+            if (!type || !startDate || !endDate) {
+                alert('Пожалуйста, заполните все обязательные поля');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/reports/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ type, startDate, endDate, format })
+                });
+
+                if (format === 'pdf' || format === 'excel') {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `report-${type}-${startDate}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                } else {
+                    const data = await response.json();
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    displayReportPreview(data, type);
+                }
+            } catch (error) {
+                console.error('Error generating report:', error);
+                alert('Ошибка при генерации отчета: ' + error.message);
+            }
+        });
+    }
+
+    if (saveScheduleBtn) {
+        saveScheduleBtn.addEventListener('click', async () => {
+            const type = document.getElementById('report-type').value;
+            const schedule = document.getElementById('report-schedule').value;
+            const email = document.getElementById('report-email').value;
+            const format = document.getElementById('report-format').value;
+
+            if (!type || !schedule || !email || !format) {
+                alert('Пожалуйста, заполните все поля для настройки расписания');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/reports/schedule`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ type, schedule, email, format })
+                });
+
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                alert('Расписание отчета успешно сохранено');
+            } catch (error) {
+                console.error('Error scheduling report:', error);
+                alert('Ошибка при настройке расписания: ' + error.message);
+            }
+        });
+    }
+
+    function displayReportPreview(data, type) {
+        if (!reportContent) return;
+
+        let html = `<h4>${type.charAt(0).toUpperCase() + type.slice(1)}</h4>`;
+        
+        if (Array.isArray(data)) {
+            html += '<table class="report-table"><thead><tr>';
+            
+            if (data.length > 0) {
+                Object.keys(data[0]).forEach(key => {
+                    html += `<th>${key}</th>`;
+                });
+            }
+            
+            html += '</tr></thead><tbody>';
+            
+            data.forEach(row => {
+                html += '<tr>';
+                Object.values(row).forEach(value => {
+                    html += `<td>${value}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+        } else {
+            html += '<p>Нет данных для отображения</p>';
+        }
+
+        reportContent.innerHTML = html;
+    }
+
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const faqItems = document.querySelectorAll('.faq-item');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.getAttribute('data-tab');
+            
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+
+            btn.classList.add('active');
+            document.getElementById(`${targetTab}-tab`).classList.add('active');
+        });
+    });
+
+    faqItems.forEach(item => {
+        const question = item.querySelector('.faq-question');
+        question.addEventListener('click', () => {
+            const isActive = item.classList.contains('active');
+            
+
+            faqItems.forEach(faq => faq.classList.remove('active'));
+            
+
+            if (!isActive) {
+                item.classList.add('active');
+            }
+        });
+    });
 }); 
